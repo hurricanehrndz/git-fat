@@ -30,11 +30,6 @@ class ClonedGitRepo(Workspace):
         self.uri = "file://%s" % self.workspace
 
 
-@pytest.fixture(scope="session")
-def rsync_dest_dir(tmp_path_factory):
-    return tmp_path_factory.mktemp("data")
-
-
 @pytest.fixture()
 def s3_gitrepo(git_repo, resource_path_root):
     path = git_repo.workspace

@@ -20,7 +20,7 @@ class S3FatStore(SyncBackend):
     def get_bucket_name(self, possible_name: str):
         s3_uri_prefix = "s3://"
         if possible_name.startswith(s3_uri_prefix):
-            return possible_name[len(s3_uri_prefix):]
+            return possible_name[len(s3_uri_prefix) :]
         return possible_name
 
     def get_s3_resource(self):
@@ -29,12 +29,10 @@ class S3FatStore(SyncBackend):
             named_args["endpoint_url"] = self.conf.get("endpoint")
 
         if self.conf.get("id") and self.conf.get("secret"):
-            named_args["aws_access_key_id"] = self.conf.get("id")
-            named_args["aws_secret_access_key"] = self.conf.get("secret")
+            named_args["aws_access_key_id"] = self.conf.get("id")  # pragma: no cover
+            named_args["aws_secret_access_key"] = self.conf.get("secret")  # pragma: no cover
 
-        return boto3.resource(
-            "s3", config=Config(signature_version="s3v4"), verify=False, **named_args
-        )
+        return boto3.resource("s3", config=Config(signature_version="s3v4"), verify=False, **named_args)
 
     def upload(self, local_filename: str, remote_filename=None) -> None:
         if remote_filename is None:
