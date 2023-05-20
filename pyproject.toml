@@ -26,6 +26,7 @@ pytest-docker-compose = "^3.2.1"
 requests = "^2.29.0"
 tox = "^3.27.0"
 pytest-cov = "^4.0.0"
+pre-commit = "^3.3.2"
 
 [tool.pytest.ini_options]
 addopts = "--docker-compose=tests/docker-compose.yaml"
