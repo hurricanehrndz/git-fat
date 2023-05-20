@@ -1,4 +1,8 @@
+[run]
+#show_missing = True
+
 [report]
+fail_under = 90
 exclude_lines =
     # Skip any pass lines such as may be used for @abstractmethod
     pass
