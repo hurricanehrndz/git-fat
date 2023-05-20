@@ -1,15 +1,11 @@
-from typing import Protocol, List, Dict
+from typing import List, Dict
 import boto3
 import os
+from .syncbackend import SyncBackend
 from botocore.config import Config
 
 
-class FatStores(Protocol):
-    def sync(self, file_path: str) -> None:
-        pass
-
-
-class S3FatStore:
+class S3FatStore(SyncBackend):
     def __init__(
         self,
         conf: Dict,
@@ -45,7 +41,7 @@ class S3FatStore:
             remote_filename = os.path.basename(local_filename)
         self.bucket.upload_file(local_filename, remote_filename)
 
-    def list(self) -> List:
+    def list(self) -> List[str]:
         remote_files = [item.key for item in self.bucket.objects.all()]
         return remote_files
 
