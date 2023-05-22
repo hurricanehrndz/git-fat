@@ -42,8 +42,19 @@ class FatObj:
     def __init__(self, path: os.PathLike, fatid: str, size: int, abspath: os.PathLike):
         self.fatid = fatid
         self.path = path
+        self.spath = str(path)
         self.abspath = abspath
         self.size = size
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, self.__class__)
+            and getattr(other, "fatid", None) == self.fatid
+            and getattr(other, "spath", None) == self.spath
+        )
+
+    def __hash__(self):
+        return hash(self.fatid + self.spath)
 
 
 class FatRepo:
@@ -166,9 +177,9 @@ class FatRepo:
         unique_fatobjs = set()
 
         for commit in self.gitapi.iter_commits(refs):
-            fatobjs = (
+            fatobjs = {
                 self.create_fatobj(item) for item in commit.tree.traverse() if self.is_fatblob(item)  # type: ignore
-            )
+            }
             unique_fatobjs.update(fatobjs)
         return list(unique_fatobjs)
 
