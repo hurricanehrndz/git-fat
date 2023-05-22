@@ -350,8 +350,8 @@ class FatRepo:
         for fpath in fpaths:
             print(str(fpath))
         if len(fpaths) != 0:
-            requested_abspath = [str(fpath.absolute) for fpath in fpaths]
-            fatobjs_to_find = [fatobj for fatobj in committed_fatobjs if fatobj.abspath in requested_abspath]
+            requested_abspaths = [str(fpath.absolute()) for fpath in fpaths]
+            fatobjs_to_find = {fatobj for fatobj in committed_fatobjs if fatobj.abspath in requested_abspaths}
         else:
             fatobjs_to_find = committed_fatobjs
 
