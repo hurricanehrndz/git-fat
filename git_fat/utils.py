@@ -166,21 +166,19 @@ class FatRepo:
 
         return FatObj(path=blob.path, fatid=tostr(fatid), size=size, abspath=blob.abspath)
 
-    def get_fatobjs(self, refs: Union[str, git.objects.commit.Commit, None] = None) -> List[FatObj]:
+    def get_fatobjs(self) -> List[FatObj]:
         """
         Returns a filtered list of GitPython blob objects categorized as git-fat blobs.
         see: https://gitpython.readthedocs.io/en/stable/reference.html?highlight=size#module-git.objects.base
             Parameters:
                 refs: A valid Git reference or list of references defaults to HEAD
         """
-        refs = "HEAD" if refs is None else refs
         unique_fatobjs = set()
 
-        for commit in self.gitapi.iter_commits(refs):
-            fatobjs = {
-                self.create_fatobj(item) for item in commit.tree.traverse() if self.is_fatblob(item)  # type: ignore
-            }
-            unique_fatobjs.update(fatobjs)
+        index = self.gitapi.index
+        unique_fatobjs = {
+            self.create_fatobj(blob) for stage, blob in index.iter_blobs() if stage == 0 and self.is_fatblob(blob)
+        }
         return list(unique_fatobjs)
 
     def setup(self):
@@ -283,14 +281,14 @@ class FatRepo:
     def pull_all(self):
         local_fatfiles = os.listdir(self.objdir)
         remote_fatfiles = self.fatstore.list()
-        committed_fatobjs = self.get_fatobjs()
+        idx_fatobjs = self.get_fatobjs()
 
         pull_candidates = [file for file in remote_fatfiles if file not in local_fatfiles]
         if len(pull_candidates) == 0:
             self.verbose("git-fat pull: nothing to pull", force=True)
             return
 
-        for obj in committed_fatobjs:
+        for obj in idx_fatobjs:
             if obj.fatid not in pull_candidates or obj.fatid not in remote_fatfiles:
                 self.verbose(f"git-fat pull: {obj.path} found locally, skipping", force=True)
                 continue
@@ -330,9 +328,9 @@ class FatRepo:
         self.setup()
         local_fatfiles = os.listdir(self.objdir)
         remote_fatfiles = self.fatstore.list()
-        committed_fatobjs = self.get_fatobjs()
+        idx_fatojbs = self.get_fatobjs()
 
-        push_candidates = [fatobj for fatobj in committed_fatobjs if fatobj.fatid in local_fatfiles]
+        push_candidates = [fatobj for fatobj in idx_fatojbs if fatobj.fatid in local_fatfiles]
         if len(push_candidates) == 0:
             self.verbose("git-fat push: nothing to push", force=True)
             return
@@ -342,15 +340,13 @@ class FatRepo:
 
     def fatstore_check(self, fpaths: List[Path] = []) -> None:
         remote_fatfiles = self.fatstore.list()
-        committed_fatobjs = self.get_fatobjs()
+        idx_fatobjs = self.get_fatobjs()
 
-        for fpath in fpaths:
-            print(str(fpath))
         if len(fpaths) != 0:
             requested_abspaths = [str(fpath.absolute()) for fpath in fpaths]
-            fatobjs_to_find = {fatobj for fatobj in committed_fatobjs if fatobj.abspath in requested_abspaths}
+            fatobjs_to_find = {fatobj for fatobj in idx_fatobjs if fatobj.abspath in requested_abspaths}
         else:
-            fatobjs_to_find = committed_fatobjs
+            fatobjs_to_find = idx_fatobjs
 
         missing_fatobjs = [fatobj for fatobj in fatobjs_to_find if fatobj.fatid not in remote_fatfiles]
 
