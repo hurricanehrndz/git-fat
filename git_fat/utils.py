@@ -203,10 +203,7 @@ class FatRepo:
         # Set permissions for the new file using the current umask
         os.chmod(cached_file, int("444", 8) & ~umask())
         os.rename(cached_file, objfile)
-        self.verbose(
-            f"git-fat filter-clean: caching to {objfile.relative_to(self.workspace)}",
-            force=True,
-        )
+        self.verbose(f"git-fat filter-clean: caching to {objfile.relative_to(self.workspace)}")
 
     def filter_clean(self, input_handle: IO, output_handle: IO):
         """
