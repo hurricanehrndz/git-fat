@@ -152,9 +152,6 @@ class FatRepo:
         if item.type != "blob":
             return False
 
-        if item.size != self.magiclen:
-            return False
-
         fatstub_candidate = item.data_stream.read(self.magiclen)
         return self.is_fatstub(fatstub_candidate)
 
