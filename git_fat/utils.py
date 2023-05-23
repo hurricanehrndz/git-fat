@@ -3,7 +3,7 @@ import git.objects
 from pathlib import Path
 from git_fat.fatstores import S3FatStore
 import hashlib
-from typing import Union, List, Tuple, IO
+from typing import List, Tuple, IO
 import configparser as iniparser
 import tempfile
 import os

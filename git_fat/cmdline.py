@@ -14,13 +14,18 @@ __version__ = version("git-fat")
 fatrepo: FatRepo
 
 
+class NotInGitrepo(Exception):
+    "Raised when working directory is not part of a git-repo tree"
+    pass
+
+
 def get_gitroot() -> Path:
     try:
         gitroot_check_output = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True)
         gitroot = gitroot_check_output.strip()
         return Path(str(gitroot))
     except subprocess.CalledProcessError:
-        sys.exit(1)
+        raise NotInGitrepo
 
 
 def get_fatrepo() -> FatRepo:
@@ -64,11 +69,11 @@ def push_cmd(_):
 
 
 def pull_cmd(args):
-    if args.all:
+    if getattr(args, "all", None):
         print("git-fat pull: downloading and restoring all files in remote fatstore", file=sys.stderr)
         fatrepo.pull_all()
         return
-    if args.files:
+    if getattr(args, "files", None):
         fpaths = get_valid_fpaths(args.files)
         fatrepo.pull(fpaths)
         return
@@ -78,7 +83,7 @@ def pull_cmd(args):
 
 
 def fatstore_check_cmd(args):
-    if args.files:
+    if getattr(args, "files", None):
         fpaths = get_valid_fpaths(args.files)
         fatrepo.fatstore_check(fpaths)
         return
