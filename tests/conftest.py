@@ -8,9 +8,17 @@ from requests.adapters import HTTPAdapter
 import boto3
 from botocore.config import Config
 from git_fat.fatstores import S3FatStore
+import tomli
 
 pytest_plugins = ["docker_compose"]
 bucket_name = "munki-repo"
+sampleconf = """
+[s3]
+bucket = 's3://munki-repo'
+endpoint = 'http://127.0.0.1:9000'
+[s3.extrapushargs]
+ACL = 'bucket-owner-full-control'
+"""
 
 
 class ClonedGitRepo(Workspace):
@@ -36,12 +44,7 @@ def s3_gitrepo(git_repo, resource_path_root):
     s3_test_resources = resource_path_root / "s3"
     copy_files(str(s3_test_resources), str(path))
     git_fat_conf = path / ".gitfat"
-    conf = f"""
-[s3]
-bucket = s3://{bucket_name}
-endpoint = http://127.0.0.1:9000
-extrapushargs = --acl bucket-owner-full-control"""
-    git_fat_conf.write_text(conf)
+    git_fat_conf.write_text(sampleconf)
     git_repo.run("git fat init")
     git_repo.run("git add --all")
     git_repo.api.index.commit("Initial commit")
@@ -87,13 +90,6 @@ def setup_s3(session_scoped_container_getter):
 
 @pytest.fixture()
 def s3_fatstore():
-    config = {
-        "bucket": bucket_name,
-        "endpoint": "http://127.0.0.1:9000",
-        # following being pulled from env
-        # "access_key_id": "root",
-        # "secret_access_key": "password",
-    }
-
-    fatstore = S3FatStore(config)
+    config = tomli.loads(sampleconf)
+    fatstore = S3FatStore(config["s3"])
     return fatstore

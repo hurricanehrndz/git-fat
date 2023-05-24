@@ -1,12 +1,13 @@
 from git.repo import Repo
 from git import Commit
+from git.objects.base import Object as Gobject
 from functools import singledispatchmethod
 import git.objects
 from pathlib import Path
 from git_fat.fatstores import S3FatStore
 import hashlib
 from typing import List, Set, Tuple, IO
-import configparser as iniparser
+import tomli
 import tempfile
 import os
 import sys
@@ -123,29 +124,32 @@ class FatRepo:
         dummy_file_size = len(dummy_file_contents)
         return len(self.encode_fatstub(dummy_file_sha, dummy_file_size))
 
-    def get_gitfat_config(self) -> iniparser.ConfigParser:
+    def get_gitfat_config(self) -> dict:
         """
-        Returns ConfigParser for gitfat config found in repo
+        Returns a directory of gitfat config in repo
         """
         if not self.gitfat_config_path.exists():
             self.verbose("No valid fat config exists", force=True)
             sys.exit(1)
 
-        gitfat_config = iniparser.ConfigParser()
-        gitfat_config.read(self.gitfat_config_path)
-
-        if len(gitfat_config.sections()) != 1:
-            raise Exception("Invalid gitfat config")
+        with open(self.gitfat_config_path, "rb") as f:
+            gitfat_config = tomli.load(f)
 
         return gitfat_config
 
     def get_fatstore(self):
+        """
+        Returns initialize fatstore as described in gitfat config
+        """
         # if self.is_fatstore_s3():
         config = dict(self.gitfat_config["s3"])
         return S3FatStore(config)
 
     def is_fatstore_s3(self):
-        return "s3" in self.gitfat_config.sections()
+        """
+        Returns true if S3 section exists in gitfat confi
+        """
+        return self.gitfat_config.get("s3")
 
     def is_fatfile(self, filename: str):
         file_filters = self.gitapi.git.execute(
@@ -154,7 +158,10 @@ class FatRepo:
         )
         return "filter: fat" in str(file_filters)
 
-    def is_fatblob(self, item):
+    def is_fatblob(self, item: Gobject):
+        """
+        Takes GitPython object, returns true if Blob and datastream starts with git-fat cookie
+        """
         if item.type != "blob":
             return False
 
@@ -387,18 +394,6 @@ class FatRepo:
     ) -> None:
         added_blobs = self.get_added_blobs(branch)
         self.confirm_on_remote(added_blobs)
-
-    #     remote_fatfiles = self.fatstore.list()
-    #     hcommit = self.gitapi.head.commit
-    #     diff_index = branch.diff(hcommit)
-    #     fatobjs_to_find = set()
-    #     for diff_item in diff_index.iter_change_type("A"):
-    #         new_blob = diff_item.b_blob
-    #         if not self.is_fatblob(new_blob):
-    #             continue
-    #         fatobjs_to_find.add(self.create_fatobj(new_blob))
-    #
-    #     missing_fatobjs = [fatobj for fatobj in fatobjs_to_find if fatobj.fatid not in remote_fatfiles]
 
     def status(self):
         pass
