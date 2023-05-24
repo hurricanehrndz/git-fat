@@ -13,16 +13,16 @@ from pathlib import Path
 import tomli
 
 pytest_plugins = ["docker_compose"]
-bucket_name = "munki-repo"
+bucket_name = "fatstore"
 smudge_bucket_name = "munkirepo"
-sampleconf = """
+sampleconf = f"""
 [s3]
-bucket = 's3://munki-repo'
+bucket = 's3://{bucket_name}'
 endpoint = 'http://127.0.0.1:9000'
 [s3.extrapushargs]
 ACL = 'bucket-owner-full-control'
 [s3.smudgestore]
-bucket = 's3://munkirepo'
+bucket = 's3://{smudge_bucket_name}'
 endpoint = 'http://127.0.0.1:9000'
 [s3.smudgestore.extrapushargs]
 ACL = 'bucket-owner-full-control'
@@ -79,7 +79,7 @@ def create_bucket(api_url):
     smudge_bucket = s3.Bucket(smudge_bucket_name)
     if not bucket.creation_date:
         s3.create_bucket(Bucket=bucket_name)
-    if not smudge_bucket:
+    if not smudge_bucket.creation_date:
         s3.create_bucket(Bucket=smudge_bucket_name)
 
 
