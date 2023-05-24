@@ -55,6 +55,8 @@ def s3_gitrepo(git_repo, resource_path_root):
     git_fat_conf.write_text(sampleconf)
     git_repo.run("git fat init")
     git_repo.run("git add --all")
+    git_repo.run("git config --global user.email 'you@example.com'")
+    git_repo.run("git config --global user.name 'Your Name'")
     git_repo.api.index.commit("Initial commit")
     return git_repo
 
