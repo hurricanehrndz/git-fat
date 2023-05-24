@@ -7,7 +7,6 @@ import subprocess
 from typing import List
 from pathlib import Path
 from git_fat.utils import FatRepo, NoArgs
-from gitdb.exc import BadName
 from importlib.metadata import version
 
 __version__ = version("git-fat")

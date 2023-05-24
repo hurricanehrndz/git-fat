@@ -75,6 +75,7 @@ class FatRepo:
         self.debug = True if os.environ.get("GIT_FAT_VERBOSE") else False
         self._gitfat_config = None
         self._fatstore = None
+        self._smudgestore = None
         self.setup()
 
     @property
@@ -88,6 +89,12 @@ class FatRepo:
         if not self._fatstore:
             self._fatstore = self.get_fatstore()
         return self._fatstore
+
+    @property
+    def smudgestore(self):
+        if not self._smudgestore:
+            self._smudgestore = self.get_smudgestore()
+        return self._smudgestore
 
     def verbose(self, *args, force: bool = False, **kargs):
         if force or self.debug:
@@ -137,26 +144,28 @@ class FatRepo:
 
         return gitfat_config
 
+    def get_fatstore_type(self) -> str:
+        """
+        Returns first section name from gitfat config
+        """
+        config_keys = list(self.gitfat_config.keys())
+        return config_keys[0]
+
+    def get_smudgestore(self):
+        """
+        Returns initialize smudge store as described in gitfat config
+        """
+        fatstore_type = self.get_fatstore_type()
+        config = dict(self.gitfat_config[fatstore_type]["smudgestore"])
+        return S3FatStore(config)
+
     def get_fatstore(self):
         """
         Returns initialize fatstore as described in gitfat config
         """
-        # if self.is_fatstore_s3():
-        config = dict(self.gitfat_config["s3"])
+        fatstore_type = self.get_fatstore_type()
+        config = self.gitfat_config[fatstore_type]
         return S3FatStore(config)
-
-    def is_fatstore_s3(self):
-        """
-        Returns true if S3 section exists in gitfat confi
-        """
-        return self.gitfat_config.get("s3")
-
-    def is_fatfile(self, filename: str):
-        file_filters = self.gitapi.git.execute(
-            command=["git", "check-attr", "filter", "--", filename],
-            stdout_as_string=True,
-        )
-        return "filter: fat" in str(file_filters)
 
     def is_fatblob(self, item: Gobject):
         """
@@ -354,12 +363,12 @@ class FatRepo:
                 self.verbose(f"git-fat: {missing_obj.path} not found on remote store", force=True)
             sys.exit(1)
 
-    def get_added_blobs(self, branch: Commit) -> Set[FatObj]:
+    def get_added_fatobjs(self, ref: Commit) -> Set[FatObj]:
         """
         Compares given commit with HEAD (active_branch) and returns set of FatObj
         """
         hcommit = self.gitapi.head.commit
-        diff_index = branch.diff(hcommit)
+        diff_index = ref.diff(hcommit)
         added_fatobjs = set()
         for diff_item in diff_index.iter_change_type("A"):
             new_blob = diff_item.b_blob
@@ -392,8 +401,22 @@ class FatRepo:
     def _(
         self, branch  # type: Commit
     ) -> None:
-        added_blobs = self.get_added_blobs(branch)
+        added_blobs = self.get_added_fatobjs(branch)
         self.confirm_on_remote(added_blobs)
 
-    def status(self):
-        pass
+    def publish_added_fatobjs(self, ref: Commit) -> None:
+        """
+        Takes REF, finds new fatobjs in REF but not in HEAD and uploads to smudge store
+        """
+        added_fatobjs = self.get_added_fatobjs(ref)
+        for fatobj in added_fatobjs:
+            fpath = Path(fatobj.abspath)
+            keyname = str(fpath.relative_to(self.workspace))
+            fatobj_cache_path = self.objdir / fatobj.fatid
+            if not fatobj_cache_path.exists():
+                self.pull(files=[fpath])
+            self.verbose(f"git-fat: publishing '{keyname}' to smudgestore", force=True)
+            self.smudgestore.upload(local_filename=str(fatobj_cache_path), remote_filename=keyname)
+
+    # def status(self):
+    #     pass

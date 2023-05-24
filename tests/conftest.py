@@ -8,15 +8,23 @@ from requests.adapters import HTTPAdapter
 import boto3
 from botocore.config import Config
 from git_fat.fatstores import S3FatStore
+from git_fat.utils import FatRepo
+from pathlib import Path
 import tomli
 
 pytest_plugins = ["docker_compose"]
 bucket_name = "munki-repo"
+smudge_bucket_name = "munkirepo"
 sampleconf = """
 [s3]
 bucket = 's3://munki-repo'
 endpoint = 'http://127.0.0.1:9000'
 [s3.extrapushargs]
+ACL = 'bucket-owner-full-control'
+[s3.smudgestore]
+bucket = 's3://munkirepo'
+endpoint = 'http://127.0.0.1:9000'
+[s3.smudgestore.extrapushargs]
 ACL = 'bucket-owner-full-control'
 """
 
@@ -68,8 +76,11 @@ def create_bucket(api_url):
         verify=False,
     )
     bucket = s3.Bucket(bucket_name)
+    smudge_bucket = s3.Bucket(smudge_bucket_name)
     if not bucket.creation_date:
         s3.create_bucket(Bucket=bucket_name)
+    if not smudge_bucket:
+        s3.create_bucket(Bucket=smudge_bucket_name)
 
 
 # Invoking this fixture: 'function_scoped_container_getter' starts all services
@@ -89,7 +100,26 @@ def setup_s3(session_scoped_container_getter):
 
 
 @pytest.fixture()
+def fatrepo(s3_gitrepo):
+    gitrepo = s3_gitrepo
+    return FatRepo(Path(gitrepo.workspace))
+
+
+@pytest.fixture()
+def cloned_fatrepo(s3_cloned_gitrepo):
+    gitrepo = s3_cloned_gitrepo
+    return FatRepo(Path(gitrepo.workspace))
+
+
+@pytest.fixture()
 def s3_fatstore():
     config = tomli.loads(sampleconf)
     fatstore = S3FatStore(config["s3"])
+    return fatstore
+
+
+@pytest.fixture()
+def s3_smudgestore():
+    config = tomli.loads(sampleconf)
+    fatstore = S3FatStore(config["s3"]["smudgestore"])
     return fatstore
