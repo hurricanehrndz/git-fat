@@ -13,9 +13,9 @@ def test_is_fat_file(s3_gitrepo):
     assert fatrepo.is_fatfile(filename=s3_gitrepo.workspace / "a.fat")
 
 
-def test_get_fatobjs(s3_gitrepo):
+def test_get_indexed_fatobjs(s3_gitrepo):
     fatrepo = FatRepo(s3_gitrepo.workspace)
-    all_fatobjs = fatrepo.get_fatobjs()
+    all_fatobjs = fatrepo.get_indexed_fatobjs()
     assert len(list(all_fatobjs)) == 2
     expected_fatobjs = ["a.fat", "b.fat"]
     filtered = [fatobj for fatobj in all_fatobjs if fatobj.path not in expected_fatobjs]

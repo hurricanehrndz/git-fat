@@ -1,9 +1,11 @@
 from git.repo import Repo
+from git import Commit
+from functools import singledispatchmethod
 import git.objects
 from pathlib import Path
 from git_fat.fatstores import S3FatStore
 import hashlib
-from typing import List, Tuple, IO
+from typing import List, Set, Tuple, IO
 import configparser as iniparser
 import tempfile
 import os
@@ -36,6 +38,10 @@ def tobytes(s, encoding="utf8") -> bytes:
     if hasattr(s, "encode"):
         return s.encode(encoding)
     raise ValueError("Could not encode")
+
+
+class NoArgs:
+    pass
 
 
 class FatObj:
@@ -163,12 +169,10 @@ class FatRepo:
 
         return FatObj(path=blob.path, fatid=tostr(fatid), size=size, abspath=blob.abspath)
 
-    def get_fatobjs(self) -> List[FatObj]:
+    def get_indexed_fatobjs(self) -> Set[FatObj]:
         """
         Returns a filtered list of GitPython blob objects categorized as git-fat blobs.
         see: https://gitpython.readthedocs.io/en/stable/reference.html?highlight=size#module-git.objects.base
-            Parameters:
-                refs: A valid Git reference or list of references defaults to HEAD
         """
         unique_fatobjs = set()
 
@@ -176,7 +180,7 @@ class FatRepo:
         unique_fatobjs = {
             self.create_fatobj(blob) for stage, blob in index.iter_blobs() if stage == 0 and self.is_fatblob(blob)
         }
-        return list(unique_fatobjs)
+        return unique_fatobjs
 
     def setup(self):
         if not self.objdir.exists():
@@ -278,7 +282,7 @@ class FatRepo:
     def pull_all(self):
         local_fatfiles = os.listdir(self.objdir)
         remote_fatfiles = self.fatstore.list()
-        idx_fatobjs = self.get_fatobjs()
+        idx_fatobjs = self.get_indexed_fatobjs()
 
         pull_candidates = [file for file in remote_fatfiles if file not in local_fatfiles]
         if len(pull_candidates) == 0:
@@ -325,7 +329,7 @@ class FatRepo:
         self.setup()
         local_fatfiles = os.listdir(self.objdir)
         remote_fatfiles = self.fatstore.list()
-        idx_fatojbs = self.get_fatobjs()
+        idx_fatojbs = self.get_indexed_fatobjs()
 
         push_candidates = [fatobj for fatobj in idx_fatojbs if fatobj.fatid in local_fatfiles]
         if len(push_candidates) == 0:
@@ -335,22 +339,66 @@ class FatRepo:
         needs_pushing = [fatobj for fatobj in push_candidates if fatobj.fatid not in remote_fatfiles]
         self.push_fatobjs(needs_pushing)
 
-    def fatstore_check(self, fpaths: List[Path] = []) -> None:
+    def confirm_on_remote(self, search_list: Set[FatObj]) -> None:
         remote_fatfiles = self.fatstore.list()
-        idx_fatobjs = self.get_fatobjs()
-
-        if len(fpaths) != 0:
-            requested_abspaths = [str(fpath.absolute()) for fpath in fpaths]
-            fatobjs_to_find = {fatobj for fatobj in idx_fatobjs if fatobj.abspath in requested_abspaths}
-        else:
-            fatobjs_to_find = idx_fatobjs
-
-        missing_fatobjs = [fatobj for fatobj in fatobjs_to_find if fatobj.fatid not in remote_fatfiles]
-
+        missing_fatobjs = [fatobj for fatobj in search_list if fatobj.fatid not in remote_fatfiles]
         if len(missing_fatobjs) != 0:
             for missing_obj in missing_fatobjs:
                 self.verbose(f"git-fat: {missing_obj.path} not found on remote store", force=True)
             sys.exit(1)
+
+    def get_added_blobs(self, branch: Commit) -> Set[FatObj]:
+        """
+        Compares given commit with HEAD (active_branch) and returns set of FatObj
+        """
+        hcommit = self.gitapi.head.commit
+        diff_index = branch.diff(hcommit)
+        added_fatobjs = set()
+        for diff_item in diff_index.iter_change_type("A"):
+            new_blob = diff_item.b_blob
+            if not self.is_fatblob(new_blob):
+                continue
+            added_fatobjs.add(self.create_fatobj(new_blob))
+        return added_fatobjs
+
+    @singledispatchmethod
+    def fatstore_check(self, arg):
+        raise NotImplementedError(f"Cannot format value of type {type(arg)}")
+
+    @fatstore_check.register(list)
+    def _(
+        self, files  # type: List[Path]
+    ) -> None:
+        if len(files) == 0:
+            return
+        fatobjs = self.get_indexed_fatobjs()
+        requested_abspaths = [str(fpath.absolute()) for fpath in files]
+        fatobjs_to_find = {o for o in fatobjs if o.abspath in requested_abspaths}
+        self.confirm_on_remote(fatobjs_to_find)
+
+    @fatstore_check.register(NoArgs)
+    def _(self, _) -> None:
+        fatobjs = self.get_indexed_fatobjs()
+        self.confirm_on_remote(fatobjs)
+
+    @fatstore_check.register(Commit)
+    def _(
+        self, branch  # type: Commit
+    ) -> None:
+        added_blobs = self.get_added_blobs(branch)
+        self.confirm_on_remote(added_blobs)
+
+    #     remote_fatfiles = self.fatstore.list()
+    #     hcommit = self.gitapi.head.commit
+    #     diff_index = branch.diff(hcommit)
+    #     fatobjs_to_find = set()
+    #     for diff_item in diff_index.iter_change_type("A"):
+    #         new_blob = diff_item.b_blob
+    #         if not self.is_fatblob(new_blob):
+    #             continue
+    #         fatobjs_to_find.add(self.create_fatobj(new_blob))
+    #
+    #     missing_fatobjs = [fatobj for fatobj in fatobjs_to_find if fatobj.fatid not in remote_fatfiles]
 
     def status(self):
         pass
