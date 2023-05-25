@@ -111,9 +111,7 @@ def main():
     smudge_parser = subparsers.add_parser(
         "filter-smudge", help="Takes fatstub byte stream (STDIN) and spits out (STDOUT) corresponding bytes file"
     )
-    fscheck = subparsers.add_parser(
-        "fscheck", help="Checks all files or passed files are on remote fatstore"
-    )
+    fscheck = subparsers.add_parser("fscheck", help="Checks all files or passed files are on remote fatstore")
     fscheck.add_argument("files", nargs="*", help="List of files to check")
 
     fscheck_new = subparsers.add_parser(
