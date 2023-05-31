@@ -6,7 +6,7 @@ import git.objects
 from pathlib import Path
 from git_fat.fatstores import S3FatStore
 import hashlib
-from typing import List, Set, Tuple, IO
+from typing import List, Set, Tuple, IO, Union
 import tomli
 import tempfile
 import os
@@ -200,9 +200,18 @@ class FatRepo:
         }
         return unique_fatobjs
 
+    def is_gitfat_initialized(self) -> bool:
+        with self.gitapi.config_reader() as cr:
+            return cr.has_section('filter "fat"')
+
     def setup(self):
         if not self.objdir.exists():
             self.objdir.mkdir(mode=0o755, parents=True)
+
+        if not self.is_gitfat_initialized():
+            with self.gitapi.config_writer() as cw:
+                cw.set_value('filter "fat"', "clean", "git fat filter-clean")
+                cw.set_value('filter "fat"', "smudge", "git fat filter-smudge")
 
     def is_fatstub(self, data: bytes) -> bool:
         cookie = data[: len(self.cookie)]
@@ -265,8 +274,9 @@ class FatRepo:
 
         sha_digest, size = self.decode_fatstub(fatstub_candidate)
         fatfile = self.objdir / tostr(sha_digest)
-        if not fatfile.exists:
+        if not fatfile.exists():
             self.verbose("git-fat filter-smudge: fat object missing, maybe pull?")
+            output_handle.write(fatstub_candidate)
             return
 
         read_size = 0
@@ -344,7 +354,6 @@ class FatRepo:
             self.fatstore.upload(str(self.objdir / obj.fatid))
 
     def push(self):
-        self.setup()
         local_fatfiles = os.listdir(self.objdir)
         remote_fatfiles = self.fatstore.list()
         idx_fatojbs = self.get_indexed_fatobjs()
@@ -365,12 +374,11 @@ class FatRepo:
                 self.verbose(f"git-fat: {missing_obj.path} not found on remote store", force=True)
             sys.exit(1)
 
-    def get_added_fatobjs(self, ref: Commit) -> Set[FatObj]:
+    def get_added_fatobjs(self, base: Commit, ref: Union[None, Commit] = None) -> Set[FatObj]:
         """
-        Compares given commit with HEAD (active_branch) and returns set of FatObj
+        Compares given commit (base) with given REF or working index and returns set of FatObj
         """
-        hcommit = self.gitapi.head.commit
-        diff_index = ref.diff(hcommit)
+        diff_index = base.diff(ref)
         added_fatobjs = set()
         for diff_item in diff_index.iter_change_type("A"):
             new_blob = diff_item.b_blob
@@ -410,7 +418,8 @@ class FatRepo:
         """
         Takes REF, finds new fatobjs in REF but not in HEAD and uploads to smudge store
         """
-        added_fatobjs = self.get_added_fatobjs(ref)
+        head = self.gitapi.head.commit
+        added_fatobjs = self.get_added_fatobjs(ref, head)
         for fatobj in added_fatobjs:
             fpath = Path(fatobj.abspath)
             keyname = str(fpath.relative_to(self.workspace))

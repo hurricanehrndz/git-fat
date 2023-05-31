@@ -122,12 +122,12 @@ def main():
 
     fscheck_new = subparsers.add_parser(
         "fscheck-new",
-        help="Checks new fatobjs to given REF (default=master) vs HEAD are on remote fatstore",
+        help="Checks fatobjs new to given REF (default=master) vs Index are on remote fatstore",
     )
     fscheck_new.add_argument("ref_name", nargs="?", default="master")
     fspublish_new = subparsers.add_parser(
         "fspublish-new",
-        help="Publish new fatobjs to given REF (default=master) vs HEAD to remote smudge stroe",
+        help="Publish fatobjs new to given REF (default=master) vs HEAD to remote smudge stroe",
     )
     fspublish_new.add_argument("ref_name", nargs="?", default="master")
 
