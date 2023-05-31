@@ -200,9 +200,18 @@ class FatRepo:
         }
         return unique_fatobjs
 
+    def is_gitfat_initialized(self) -> bool:
+        with self.gitapi.config_reader() as cr:
+            return cr.has_section('filter "fat"')
+
     def setup(self):
         if not self.objdir.exists():
             self.objdir.mkdir(mode=0o755, parents=True)
+
+        if not self.is_gitfat_initialized():
+            with self.gitapi.config_writer() as cw:
+                cw.set_value('filter "fat"', "clean", "git fat filter-clean")
+                cw.set_value('filter "fat"', "smudge", "git fat filter-smudge")
 
     def is_fatstub(self, data: bytes) -> bool:
         cookie = data[: len(self.cookie)]
