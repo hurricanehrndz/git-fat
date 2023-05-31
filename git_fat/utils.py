@@ -276,6 +276,7 @@ class FatRepo:
         fatfile = self.objdir / tostr(sha_digest)
         if not fatfile.exists():
             self.verbose("git-fat filter-smudge: fat object missing, maybe pull?")
+            output_handle.write(fatstub_candidate)
             return
 
         read_size = 0
@@ -353,7 +354,6 @@ class FatRepo:
             self.fatstore.upload(str(self.objdir / obj.fatid))
 
     def push(self):
-        self.setup()
         local_fatfiles = os.listdir(self.objdir)
         remote_fatfiles = self.fatstore.list()
         idx_fatojbs = self.get_indexed_fatobjs()
