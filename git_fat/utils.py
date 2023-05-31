@@ -6,7 +6,7 @@ import git.objects
 from pathlib import Path
 from git_fat.fatstores import S3FatStore
 import hashlib
-from typing import List, Set, Tuple, IO
+from typing import List, Set, Tuple, IO, Union
 import tomli
 import tempfile
 import os
@@ -365,12 +365,11 @@ class FatRepo:
                 self.verbose(f"git-fat: {missing_obj.path} not found on remote store", force=True)
             sys.exit(1)
 
-    def get_added_fatobjs(self, ref: Commit) -> Set[FatObj]:
+    def get_added_fatobjs(self, base: Commit, ref: Union[None, Commit] = None) -> Set[FatObj]:
         """
-        Compares given commit with HEAD (active_branch) and returns set of FatObj
+        Compares given commit (base) with given REF or working index and returns set of FatObj
         """
-        hcommit = self.gitapi.head.commit
-        diff_index = ref.diff(hcommit)
+        diff_index = base.diff(ref)
         added_fatobjs = set()
         for diff_item in diff_index.iter_change_type("A"):
             new_blob = diff_item.b_blob
@@ -410,7 +409,8 @@ class FatRepo:
         """
         Takes REF, finds new fatobjs in REF but not in HEAD and uploads to smudge store
         """
-        added_fatobjs = self.get_added_fatobjs(ref)
+        head = self.gitapi.head.commit
+        added_fatobjs = self.get_added_fatobjs(ref, head)
         for fatobj in added_fatobjs:
             fpath = Path(fatobj.abspath)
             keyname = str(fpath.relative_to(self.workspace))
