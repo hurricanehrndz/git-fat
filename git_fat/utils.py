@@ -274,7 +274,7 @@ class FatRepo:
 
         sha_digest, size = self.decode_fatstub(fatstub_candidate)
         fatfile = self.objdir / tostr(sha_digest)
-        if not fatfile.exists:
+        if not fatfile.exists():
             self.verbose("git-fat filter-smudge: fat object missing, maybe pull?")
             return
 
