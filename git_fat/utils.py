@@ -275,7 +275,7 @@ class FatRepo:
         sha_digest, size = self.decode_fatstub(fatstub_candidate)
         fatfile = self.objdir / tostr(sha_digest)
         if not fatfile.exists():
-            self.verbose("git-fat filter-smudge: fat object missing, run: git-fat pull-branch")
+            self.verbose("git-fat filter-smudge: fat object missing, run: git-fat pull-new")
             output_handle.write(fatstub_candidate)
             return
 
@@ -330,7 +330,7 @@ class FatRepo:
         """
         Pulls all FatOjbs found in the git index
         """
-
+        self.verbose("git-fat: pulling all FatOjbs")
         idx_fatobjs = self.get_indexed_fatobjs()
         self.pull_fatojbs(idx_fatobjs)
 
@@ -338,6 +338,7 @@ class FatRepo:
         """
         Takes a commit, compares commit and HEAD, and pulls new FatObjs in HEAD
         """
+        self.verbose("git-fat: pulling new FatoOjs at HEAD")
         head = self.gitapi.head.commit
         fatobjs = self.get_added_fatobjs(commit, head)
         self.pull_fatojbs(fatobjs)

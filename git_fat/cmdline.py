@@ -85,7 +85,7 @@ def pull_cmd(args):
 def pull_new_cmd(args):
     if getattr(args, "ref_name", None):
         given_ref = fatrepo.gitapi.commit(args.ref_name)
-        fatrepo.fatstore_check(given_ref)
+        fatrepo.pull_new(given_ref)
 
 
 def fscheck_cmd(args):
