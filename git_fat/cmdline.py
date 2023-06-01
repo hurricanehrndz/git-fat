@@ -82,6 +82,12 @@ def pull_cmd(args):
     sys.exit(1)
 
 
+def pull_new_cmd(args):
+    if getattr(args, "ref_name", None):
+        given_ref = fatrepo.gitapi.commit(args.ref_name)
+        fatrepo.fatstore_check(given_ref)
+
+
 def fscheck_cmd(args):
     if getattr(args, "files", None):
         fpaths = get_valid_fpaths(args.files)
@@ -107,6 +113,10 @@ def main():
     parser.add_argument("-v", "--version", action="store_true", help="Show package version")
     subparsers = parser.add_subparsers()
     pull_parser = subparsers.add_parser("pull", help="Download and restore large files from fatstore")
+    pull_new_parser = subparsers.add_parser(
+        "pull-new", help="Download and restore large files new to given REF, defaults to master"
+    )
+    pull_new_parser.add_argument("ref_name", nargs="?", default="master")
     pull_parser.add_argument("-a", "--all", action="store_true", help="Download and restore all large files")
     pull_parser.add_argument("files", nargs="*", help="List of files to download and restore")
     push_parser = subparsers.add_parser("push", help="Upload large files to fatstore")
@@ -120,25 +130,26 @@ def main():
     fscheck = subparsers.add_parser("fscheck", help="Checks all files or passed files are on remote fatstore")
     fscheck.add_argument("files", nargs="*", help="List of files to check")
 
-    fscheck_new = subparsers.add_parser(
+    fscheck_new_parser = subparsers.add_parser(
         "fscheck-new",
-        help="Checks fatobjs new to given REF (default=master) vs Index are on remote fatstore",
+        help="Checks added fatobjs to working tree vs given REF (default=master) are on remote fatstore",
     )
-    fscheck_new.add_argument("ref_name", nargs="?", default="master")
-    fspublish_new = subparsers.add_parser(
+    fscheck_new_parser.add_argument("ref_name", nargs="?", default="master")
+    fspublish_new_parser = subparsers.add_parser(
         "fspublish-new",
-        help="Publish fatobjs new to given REF (default=master) vs HEAD to remote smudge stroe",
+        help="Publish added fatobjs to HEAD vs given REF (default=master) are on remote smudge stroe",
     )
-    fspublish_new.add_argument("ref_name", nargs="?", default="master")
+    fspublish_new_parser.add_argument("ref_name", nargs="?", default="master")
 
     pull_parser.set_defaults(func=pull_cmd)
+    pull_new_parser.set_defaults(func=pull_new_cmd)
     push_parser.set_defaults(func=push_cmd)
     init_parser.set_defaults(func=init_cmd)
     clean_parser.set_defaults(func=clean_cmd)
     smudge_parser.set_defaults(func=smudge_cmd)
     fscheck.set_defaults(func=fscheck_cmd)
-    fscheck_new.set_defaults(func=fscheck_new_cmd)
-    fspublish_new.set_defaults(func=fspublish_new_cmd)
+    fscheck_new_parser.set_defaults(func=fscheck_new_cmd)
+    fspublish_new_parser.set_defaults(func=fspublish_new_cmd)
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)

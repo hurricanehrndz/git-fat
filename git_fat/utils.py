@@ -275,7 +275,7 @@ class FatRepo:
         sha_digest, size = self.decode_fatstub(fatstub_candidate)
         fatfile = self.objdir / tostr(sha_digest)
         if not fatfile.exists():
-            self.verbose("git-fat filter-smudge: fat object missing, maybe pull?")
+            self.verbose("git-fat filter-smudge: fat object missing, run: git-fat pull-branch")
             output_handle.write(fatstub_candidate)
             return
 
@@ -307,23 +307,40 @@ class FatRepo:
             stdout_as_string=True,
         )
 
-    def pull_all(self):
+    def pull_fatojbs(self, fatobjs: Set[FatObj]) -> None:
+        """
+        Takes a set of FatOjbs downloads and retores the fat files
+        """
         local_fatfiles = os.listdir(self.objdir)
         remote_fatfiles = self.fatstore.list()
-        idx_fatobjs = self.get_indexed_fatobjs()
-
         pull_candidates = [file for file in remote_fatfiles if file not in local_fatfiles]
         if len(pull_candidates) == 0:
             self.verbose("git-fat pull: nothing to pull", force=True)
             return
 
-        for obj in idx_fatobjs:
+        for obj in fatobjs:
             if obj.fatid not in pull_candidates or obj.fatid not in remote_fatfiles:
                 self.verbose(f"git-fat pull: {obj.path} found locally, skipping", force=True)
                 continue
             self.verbose(f"git-fat pull: downloading {obj.fatid}")
             self.fatstore.download(obj.fatid, self.objdir / obj.fatid)
             self.restore_fatobj(obj)
+
+    def pull_all(self) -> None:
+        """
+        Pulls all FatOjbs found in the git index
+        """
+
+        idx_fatobjs = self.get_indexed_fatobjs()
+        self.pull_fatojbs(idx_fatobjs)
+
+    def pull_new(self, commit: Commit) -> None:
+        """
+        Takes a commit, compares commit and HEAD, and pulls new FatObjs in HEAD
+        """
+        head = self.gitapi.head.commit
+        fatobjs = self.get_added_fatobjs(commit, head)
+        self.pull_fatojbs(fatobjs)
 
     def pull(self, files: List[Path] = []):
         if len(files) == 0:
