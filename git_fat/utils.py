@@ -338,7 +338,7 @@ class FatRepo:
         """
         Takes a commit, compares commit and HEAD, and pulls new FatObjs in HEAD
         """
-        self.verbose("git-fat: pulling new FatoOjs at HEAD")
+        self.verbose(f"git-fat: pulling new FatoOjs in HEAD vs {commit.name_rev[41:]}")
         head = self.gitapi.head.commit
         fatobjs = self.get_added_fatobjs(commit, head)
         self.pull_fatojbs(fatobjs)
