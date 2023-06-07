@@ -320,7 +320,7 @@ class FatRepo:
 
         for obj in fatobjs:
             if obj.fatid not in pull_candidates or obj.fatid not in remote_fatfiles:
-                self.verbose(f"git-fat pull: {obj.path} found locally, skipping", force=True)
+                self.verbose(f"git-fat pull: {obj.path} found locally, skipping")
                 continue
             self.verbose(f"git-fat pull: downloading {obj.fatid}")
             self.fatstore.download(obj.fatid, self.objdir / obj.fatid)
@@ -343,11 +343,8 @@ class FatRepo:
         fatobjs = self.get_added_fatobjs(commit, head)
         self.pull_fatojbs(fatobjs)
 
-    def pull(self, files: List[Path] = []):
-        if len(files) == 0:
-            self.verbose("git-fat pull: nothing to pull", force=True)
-            return
-
+    def convert_file_list_to_fatobjs(self, files: List[Path] = []) -> Set[FatObj]:
+        fatobjs = set()
         for fpath in files:
             try:
                 rpath = fpath.relative_to(self.gitapi.working_dir)  # type: ignore
@@ -356,11 +353,17 @@ class FatRepo:
                     self.verbose(f"git-fat pull: {rpath} is not a fat object", force=True)
                     continue
                 obj = self.create_fatobj(blob)  # type: ignore
-                self.verbose(f"git-fat pull: pulling {obj.fatid} to {obj.path}", force=True)
-                self.fatstore.download(obj.fatid, self.objdir / obj.fatid)
-                self.restore_fatobj(obj)
+                fatobjs.add(obj)
             except KeyError:
-                self.verbose(f"git-fat pull: {fpath} not found in repo", force=True)
+                self.verbose(f"git-fat pull: {fpath} not part of git index")
+        return fatobjs
+
+    def pull(self, files: List[Path] = []):
+        if len(files) == 0:
+            self.verbose("git-fat pull: nothing to pull", force=True)
+            return
+        fatobjs = self.convert_file_list_to_fatobjs(files)
+        self.pull_fatojbs(fatobjs)
 
     def push_fatobjs(self, objects: List[FatObj]):
         if len(objects) == 0:
