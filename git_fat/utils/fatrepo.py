@@ -5,6 +5,9 @@ from functools import singledispatchmethod
 import git.objects
 from pathlib import Path
 from git_fat.fatstores import S3FatStore
+from .fatobj import FatObj
+from .common import tostr, tobytes, umask
+from .noargs import NoArgs
 import hashlib
 from typing import List, Set, Tuple, IO, Union
 import tomli
@@ -14,55 +17,6 @@ import sys
 import shutil
 
 BLOCK_SIZE = 4096
-
-
-def umask():
-    """Get umask without changing it."""
-    old = os.umask(0)
-    os.umask(old)
-    return old
-
-
-def tostr(s, encoding="utf-8") -> str:
-    """Automate unicode conversion"""
-    if isinstance(s, str):
-        return s
-    if hasattr(s, "decode"):
-        return s.decode(encoding)
-    raise ValueError("Cound not decode")
-
-
-def tobytes(s, encoding="utf8") -> bytes:
-    """Automatic byte conversion"""
-    if isinstance(s, bytes):
-        return s
-    if hasattr(s, "encode"):
-        return s.encode(encoding)
-    raise ValueError("Could not encode")
-
-
-class NoArgs:
-    pass
-
-
-class FatObj:
-    def __init__(self, path: Path, fatid: str, size: int, working_dir: Path):
-        self.fatid = fatid
-        self.path = str(path.relative_to(working_dir))
-        self.opath = path
-        self.abspath = str(path.absolute())
-        self.working_dir = working_dir
-        self.size = size
-
-    def __eq__(self, other):
-        return (
-            isinstance(other, self.__class__)
-            and getattr(other, "fatid", None) == self.fatid
-            and getattr(other, "spath", None) == self.path
-        )
-
-    def __hash__(self):
-        return hash(self.fatid + self.path)
 
 
 class FatRepo:
@@ -298,10 +252,7 @@ class FatRepo:
     def restore_fatobj(self, obj: FatObj):
         cache = self.objdir / obj.fatid
         self.verbose(f"git-fat pull: restore {obj.path} from {cache.name}", force=True)
-        stat = os.lstat(obj.abspath)
-        shutil.copy(self.objdir / obj.fatid, obj.abspath)
-        os.chmod(obj.abspath, stat.st_mode)
-        os.utime(obj.abspath, (stat.st_atime, stat.st_mtime))
+        shutil.copy2(self.objdir / obj.fatid, obj.abspath)
         self.gitapi.git.execute(
             command=["git", "update-index", obj.abspath],
             stdout_as_string=True,
