@@ -1,6 +1,4 @@
 from .fatobj import FatObj
-
-# from .dryrun import dryrun
 from .fatrepo import FatRepo
 from .noargs import NoArgs
 

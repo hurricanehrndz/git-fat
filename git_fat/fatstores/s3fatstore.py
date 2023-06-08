@@ -3,6 +3,7 @@ import boto3
 import os
 from .syncbackend import SyncBackend
 from botocore.config import Config
+from git_fat.tools import dryrun
 from urllib3.exceptions import InsecureRequestWarning
 from urllib3 import disable_warnings
 
@@ -35,6 +36,8 @@ class S3FatStore(SyncBackend):
         self.s3 = self.get_s3_resource()
         self.bucket = self.s3.Bucket(self.bucket_name)
         disable_warnings(InsecureRequestWarning)
+        if os.getenv("DRYRUN"):
+            dryrun.set(True)
 
     def get_bucket_name(self, possible_name: str):
         s3_uri_prefix = "s3://"
@@ -53,6 +56,15 @@ class S3FatStore(SyncBackend):
 
         return boto3.resource("s3", config=Config(signature_version="s3v4"), verify=False, **named_args)
 
+    @dryrun()
+    def _upload(self, local_filename, remote_filename, **xargs):
+        self.bucket.upload_file(Filename=local_filename, Key=remote_filename, **xargs)
+
+    @_upload.mock
+    def _upload_mock(self, local_filename, remote_filename, **xargs):
+        destination = f"{self.bucket_name}/{self.prefix}" if self.prefix else self.bucket_name
+        print(f"{local_filename} would have been uploaded to s3://{destination}/{remote_filename}")
+
     def upload(self, local_filename: str, remote_filename=None) -> None:
         xargs = {}
         if self.conf.get("xpushargs"):
@@ -61,7 +73,7 @@ class S3FatStore(SyncBackend):
             remote_filename = os.path.basename(local_filename)
         if self.prefix:
             remote_filename = os.path.join(self.prefix, remote_filename)
-        self.bucket.upload_file(Filename=local_filename, Key=remote_filename, **xargs)
+        self._upload(local_filename, remote_filename, **xargs)
 
     def strip_prefix(self, identifier):
         if identifier.startswith(self.prefix) and self.prefix:
