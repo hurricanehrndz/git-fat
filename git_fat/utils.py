@@ -12,6 +12,7 @@ import tempfile
 import os
 import sys
 import shutil
+import functools
 
 BLOCK_SIZE = 4096
 
@@ -298,10 +299,7 @@ class FatRepo:
     def restore_fatobj(self, obj: FatObj):
         cache = self.objdir / obj.fatid
         self.verbose(f"git-fat pull: restore {obj.path} from {cache.name}", force=True)
-        stat = os.lstat(obj.abspath)
-        shutil.copy(self.objdir / obj.fatid, obj.abspath)
-        os.chmod(obj.abspath, stat.st_mode)
-        os.utime(obj.abspath, (stat.st_atime, stat.st_mtime))
+        shutil.copy2(self.objdir / obj.fatid, obj.abspath)
         self.gitapi.git.execute(
             command=["git", "update-index", obj.abspath],
             stdout_as_string=True,

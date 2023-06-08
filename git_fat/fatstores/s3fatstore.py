@@ -79,7 +79,10 @@ class S3FatStore(SyncBackend):
     def download(self, remote_filename: str, local_filename: os.PathLike) -> None:
         if self.prefix:
             remote_filename = os.path.join(self.prefix, remote_filename)
+        s3_object = self.bucket.Object(remote_filename)
+        last_modified = s3_object.last_modified
         self.bucket.download_file(remote_filename, local_filename)
+        os.utime(local_filename, (os.stat(local_filename).st_atime, last_modified.timestamp()))
 
     def delete(self, filename: str) -> None:
         if self.prefix:
