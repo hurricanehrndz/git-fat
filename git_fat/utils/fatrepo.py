@@ -5,6 +5,9 @@ from functools import singledispatchmethod
 import git.objects
 from pathlib import Path
 from git_fat.fatstores import S3FatStore
+from .fatobj import FatObj
+from .common import tostr, tobytes, umask
+from .noargs import NoArgs
 import hashlib
 from typing import List, Set, Tuple, IO, Union
 import tomli
@@ -12,58 +15,8 @@ import tempfile
 import os
 import sys
 import shutil
-import functools
 
 BLOCK_SIZE = 4096
-
-
-def umask():
-    """Get umask without changing it."""
-    old = os.umask(0)
-    os.umask(old)
-    return old
-
-
-def tostr(s, encoding="utf-8") -> str:
-    """Automate unicode conversion"""
-    if isinstance(s, str):
-        return s
-    if hasattr(s, "decode"):
-        return s.decode(encoding)
-    raise ValueError("Cound not decode")
-
-
-def tobytes(s, encoding="utf8") -> bytes:
-    """Automatic byte conversion"""
-    if isinstance(s, bytes):
-        return s
-    if hasattr(s, "encode"):
-        return s.encode(encoding)
-    raise ValueError("Could not encode")
-
-
-class NoArgs:
-    pass
-
-
-class FatObj:
-    def __init__(self, path: Path, fatid: str, size: int, working_dir: Path):
-        self.fatid = fatid
-        self.path = str(path.relative_to(working_dir))
-        self.opath = path
-        self.abspath = str(path.absolute())
-        self.working_dir = working_dir
-        self.size = size
-
-    def __eq__(self, other):
-        return (
-            isinstance(other, self.__class__)
-            and getattr(other, "fatid", None) == self.fatid
-            and getattr(other, "spath", None) == self.path
-        )
-
-    def __hash__(self):
-        return hash(self.fatid + self.path)
 
 
 class FatRepo:
