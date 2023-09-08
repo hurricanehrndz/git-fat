@@ -4,7 +4,7 @@
   inputs.flake-utils.url = "github:numtide/flake-utils";
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   inputs.poetry2nix = {
-    url = "github:nix-community/poetry2nix";
+    url = "github:K900/poetry2nix/new-bootstrap-fixes";
     inputs.nixpkgs.follows = "nixpkgs";
   };
 
