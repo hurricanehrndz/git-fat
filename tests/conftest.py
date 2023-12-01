@@ -13,7 +13,6 @@ from pathlib import Path
 import tomli
 import os
 
-pytest_plugins = ["docker_compose"]
 bucket_name = "fatstore"
 smudge_bucket_name = "munkirepo"
 sampleconf = f"""

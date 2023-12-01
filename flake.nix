@@ -54,6 +54,7 @@
       devShells.default = pkgs.mkShell {
         buildInputs = [
           pkgs.poetry
+          pkgs.python310
         ];
       };
     });
