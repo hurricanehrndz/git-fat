@@ -160,13 +160,13 @@ jobs:
           import os
           from pathlib import Path
 
+          def p12(name):
+              # Drop whitespace first: `base64` on Linux wraps at 76 columns.
+              return base64.b64decode("".join(os.environ[name].split()), validate=True)
+
           signing = Path(os.environ["RUNNER_TEMP"]) / "signing"
-          signing.joinpath("application.p12").write_bytes(
-              base64.b64decode(os.environ["APPLICATION_P12_BASE64"], validate=True)
-          )
-          signing.joinpath("installer.p12").write_bytes(
-              base64.b64decode(os.environ["INSTALLER_P12_BASE64"], validate=True)
-          )
+          signing.joinpath("application.p12").write_bytes(p12("APPLICATION_P12_BASE64"))
+          signing.joinpath("installer.p12").write_bytes(p12("INSTALLER_P12_BASE64"))
           # Output of `rcodesign encode-app-store-connect-api-key`; parse it so a
           # malformed secret fails here, not after the upload.
           key = json.loads(os.environ["NOTARY_API_KEY_JSON"])
