@@ -128,9 +128,12 @@ fetch them by name.
 chain: environment variables, shared config and credentials files (profiles
 and SSO), then instance metadata.
 
-**Region.** git-fat uses the first of: `region` in `.gitfat`, the region from
-the AWS chain (`AWS_REGION`, the profile), `us-east-1` when `endpoint` is set,
-or the bucket's own region, asked from S3 with one anonymous request.
+**Region.** `region` in `.gitfat` always wins. Without it, git-fat asks S3 for
+the bucket's region with one anonymous request, and uses the region from the
+AWS chain (`AWS_REGION`, the profile) only if that request fails. The chain's
+region would break every store outside it, because S3 rejects requests signed
+for the wrong region. With `endpoint` set, git-fat uses the chain's region, or
+`us-east-1`.
 
 TLS certificates are verified. For a store with a private CA, set
 `AWS_CA_BUNDLE` to the CA's PEM file.
@@ -175,7 +178,7 @@ pre-commit builds git-fat from source with Go (`language: golang`).
 ```yaml
 repos:
   - repo: https://github.com/hurricanehrndz/git-fat
-    rev: v2.1.0
+    rev: v2.1.1
     hooks:
       - id: gitfat-check-new   # pre-commit: staged fat objects new vs master are in the store
         # args: [main]           # compare against another ref

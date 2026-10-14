@@ -48,7 +48,7 @@ const legacyDefaultRef = "master"
 
 // version is the git-fat release version, managed by `go tool versionbump`
 // (see versionbump.yaml).
-const version = "2.1.0"
+const version = "2.1.1"
 
 func main() {
 	// Cancel on the first interrupt so an in-flight multipart upload is

@@ -12,7 +12,9 @@ import (
 )
 
 // TestResolveRegionOrder pins the precedence and that discovery, a network
-// call, runs only when nothing else names a region.
+// call, runs only on AWS without a .gitfat region. The chain region must not
+// beat discovery on AWS: S3 answers 301 to a request signed for another
+// region, and one AWS_REGION cannot match two stores in different regions.
 func TestResolveRegionOrder(t *testing.T) {
 	cases := []struct {
 		name, configured, chain, endpoint string
@@ -20,9 +22,11 @@ func TestResolveRegionOrder(t *testing.T) {
 		wantDiscover                      bool
 	}{
 		{"gitfat wins", "eu-west-1", "us-west-2", "http://x", "eu-west-1", false},
-		{"chain next", "", "us-west-2", "http://x", "us-west-2", false},
+		{"gitfat wins on aws", "eu-west-1", "us-west-2", "", "eu-west-1", false},
+		{"custom endpoint uses chain", "", "us-west-2", "http://x", "us-west-2", false},
 		{"custom endpoint falls back", "", "", "http://x", "us-east-1", false},
 		{"aws discovers", "", "", "", "ap-south-1", true},
+		{"aws discovers over chain", "", "us-west-2", "", "ap-south-1", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -43,6 +47,13 @@ func TestResolveRegionDiscoverError(t *testing.T) {
 	_, err := resolveRegion(context.Background(), "", "", "", func(context.Context) (string, error) { return "", boom })
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want boom", err)
+	}
+}
+
+func TestResolveRegionDiscoverErrorUsesChain(t *testing.T) {
+	got, err := resolveRegion(context.Background(), "", "us-west-2", "", func(context.Context) (string, error) { return "", errors.New("boom") })
+	if err != nil || got != "us-west-2" {
+		t.Fatalf("resolveRegion = %q, %v; want us-west-2, nil", got, err)
 	}
 }
 
