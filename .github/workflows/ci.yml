@@ -1,0 +1,52 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: cachix/install-nix-action@v31
+      # Same rustfs the devshell gets: built from the nixpkgs rev in flake.lock
+      # and substituted from cache.nixos.org. Integration tests spawn it.
+      - name: Install RustFS from the flake.lock nixpkgs pin
+        run: |
+          rev=$(jq -er .nodes.nixpkgs.locked.rev flake.lock)
+          out=$(nix build --no-link --print-out-paths "github:NixOS/nixpkgs/$rev#rustfs")
+          "$out/bin/rustfs" --version | head -1
+          echo "$out/bin" >> "$GITHUB_PATH"
+      - run: go build ./...
+      - run: go vet ./...
+      # -tags integration compiles the whole suite, unit + RustFS-backed
+      - run: go test -tags integration ./...
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      # Unit and end-to-end tests against the runner's Git for Windows.
+      - run: go test ./...
+  lint:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          args: --build-tags integration

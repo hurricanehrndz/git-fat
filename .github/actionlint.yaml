@@ -1,0 +1,5 @@
+# actionlint 1.7.12 predates GitHub's ubuntu-26.04 runner label; drop this
+# once actionlint knows it.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04

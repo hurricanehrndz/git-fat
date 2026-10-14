@@ -1,0 +1,61 @@
+# golangci-lint v2 configuration.
+# Docs: https://golangci-lint.run/usage/configuration/
+version: "2"
+run:
+  timeout: 5m
+linters:
+  # Keep golangci-lint's default set (errcheck, govet, ineffassign,
+  # staticcheck, unused) and layer extra checks on top.
+  enable:
+    # Complexity / size guardrails.
+    - gocyclo # cyclomatic complexity per function
+    - gocognit # cognitive complexity per function
+    - cyclop # cyclomatic complexity per function and package average
+    - funlen # function length
+    - nestif # deeply nested if blocks
+    # Bug / resource-management guardrails (fire only when the relevant
+    # code exists, so they cost nothing until it does).
+    - bodyclose # unclosed HTTP response bodies
+    - sqlclosecheck # unclosed sql.Rows / sql.Stmt
+    - rowserrcheck # unchecked sql.Rows.Err
+    - makezero # append to a non-zero-length slice literal
+    # Code-quality checks (low noise, high signal).
+    - misspell # common misspellings in comments/strings
+    - unconvert # unnecessary type conversions
+    - unparam # unused function parameters
+  settings:
+    govet:
+      # Enable the shadow analyzer (off by default) to catch variables
+      # shadowed in inner scopes, e.g. a re-declared `err`.
+      enable:
+        - shadow
+    gocyclo:
+      # Flag functions with more branching than this. golangci's own default
+      # is 30, which is quite permissive; 15 keeps functions readable.
+      min-complexity: 15
+    gocognit:
+      min-complexity: 20
+    cyclop:
+      max-complexity: 15
+      package-average: 10.0
+    funlen:
+      lines: 60
+      statements: 40
+    nestif:
+      min-complexity: 4
+  exclusions:
+    generated: lax
+    # Tests are allowed to be long and branchy (table-driven cases, setup).
+    rules:
+      - path: _test\.go
+        linters:
+          - funlen
+          - gocyclo
+          - gocognit
+          - cyclop
+          - nestif
+          - errcheck # tests often ignore errors deliberately
+          - unparam # table-driven test helpers carry unused params
+
+# Formatting is handled by treefmt (gofumpt) in devenv.nix, so no formatters
+# are enabled here to avoid two tools fighting over the same files.
