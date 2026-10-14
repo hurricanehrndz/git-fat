@@ -1,0 +1,26 @@
+# The current version of the project. This is the source of truth for the project version. 
+# Set this once and let VersionBump manage it.
+version: "2.0.0"
+# Git configuration (optional)
+git-commit: false # Whether to create a git commit for the version bump.
+git-sign: false # Whether to sign the git commit and tag.
+git-tag: false # Whether to create a git tag for the version bump.
+# Git commit and tag templates. These are the templates used for the git commit and tag messages.
+git-commit-template: "bump version {old} --> {new}" # The template for the git commit message.
+git-tag-template: "v{new}" # The template for the git tag name.
+git-tag-message-template: "Release version {new}" # The template for the git tag message.
+# Prerelease labels. These are the labels that will be used for prerelease versions.
+# VersionBump with sort these labels in ascending order when determining the next version.
+# If the bump type is 'prerelease-next'', the next label will be used. Attempting to bump past the last label 
+# will result in an error.
+prerelease-labels:
+  - "beta"
+# The build label. This is the label that will be used for build versions.
+build-label: "build"
+files: # The files to update with the new version (i.e. "Tracked files").
+  - path: "cmd/git-fat/main.go"
+    replace:
+      - 'const version = "{version}"'
+  - path: "embala.toml"
+    replace:
+      - 'version = "{version}"'

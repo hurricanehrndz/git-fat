@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hurricanehrndz/git-fat/pkg/pktline"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/pktline"
 )
 
 // packetSizes walks raw pkt-line output and returns each packet's payload

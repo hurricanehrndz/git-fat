@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hurricanehrndz/git-fat/pkg/fatstub"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatstub"
 )
 
 // Object is a fat object as git sees it: a path whose blob is a stub.

@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hurricanehrndz/git-fat/pkg/fatconfig"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatconfig"
 )
 
-// sampleconf is tests/conftest.py's sampleconf, the shape existing repos use.
+// sampleconf is the 1.x Python test suite's sampleconf, the shape existing repos use.
 const sampleconf = `
 [s3]
 bucket = 's3://fatstore'

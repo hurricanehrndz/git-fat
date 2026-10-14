@@ -13,9 +13,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/hurricanehrndz/git-fat/pkg/fatconfig"
-	"github.com/hurricanehrndz/git-fat/pkg/fatrepo"
-	"github.com/hurricanehrndz/git-fat/pkg/fatstore"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatconfig"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatrepo"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatstore"
 )
 
 const usage = `usage:
@@ -34,8 +34,9 @@ const usage = `usage:
 // defaultRef is the ref the *-new commands compare against, as in Python.
 const defaultRef = "master"
 
-// version is the git-fat release version.
-const version = "2.0.0-dev"
+// version is the git-fat release version, managed by `go tool versionbump`
+// (see versionbump.yaml).
+const version = "2.0.0"
 
 func main() {
 	// Cancel on the first interrupt so an in-flight multipart upload is

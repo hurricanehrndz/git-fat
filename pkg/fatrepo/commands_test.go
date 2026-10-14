@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hurricanehrndz/git-fat/pkg/fatrepo"
-	"github.com/hurricanehrndz/git-fat/pkg/fatstub"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatrepo"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatstub"
 )
 
 // TestMain builds git-fat onto PATH, so the repos under test run the real

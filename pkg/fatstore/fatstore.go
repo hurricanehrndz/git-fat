@@ -19,7 +19,7 @@ import (
 	tmtypes "github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/hurricanehrndz/git-fat/pkg/fatconfig"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatconfig"
 )
 
 // S3API is the S3 surface the store needs. It is transfermanager's, which

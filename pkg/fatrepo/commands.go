@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hurricanehrndz/git-fat/pkg/fatstub"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatstub"
 )
 
 // Store is the remote store the commands move objects to and from.

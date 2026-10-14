@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hurricanehrndz/git-fat/pkg/fatstub"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatstub"
 )
 
 func TestRunVersion(t *testing.T) {

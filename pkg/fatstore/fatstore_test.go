@@ -21,8 +21,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/hurricanehrndz/pinsync/pkg/s3test"
 
-	"github.com/hurricanehrndz/git-fat/pkg/fatconfig"
-	"github.com/hurricanehrndz/git-fat/pkg/fatstore"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatconfig"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatstore"
 )
 
 // fakeS3 wraps s3test.Fake with what the store tests need beyond it: the

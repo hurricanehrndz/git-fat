@@ -1,0 +1,2 @@
+# Golden stub fixtures are compared byte for byte; keep autocrlf away from them.
+pkg/fatstub/testdata/* -text

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hurricanehrndz/git-fat/pkg/fatrepo"
-	"github.com/hurricanehrndz/git-fat/pkg/fatstub"
-	"github.com/hurricanehrndz/git-fat/pkg/pktline"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatrepo"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatstub"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/pktline"
 )
 
 // client scripts what git sends, as segments that each end where git would

@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/hurricanehrndz/git-fat/pkg/pktline"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/pktline"
 )
 
 // Process serves git's long-running filter process protocol (version 2) on

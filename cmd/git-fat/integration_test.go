@@ -93,7 +93,7 @@ func isolateAWS(t *testing.T) {
 	t.Setenv("DRYRUN", "")
 }
 
-// TestRustFSFlow is the Python tests/test_cmdline.py flow against RustFS:
+// TestRustFSFlow is the 1.x Python test_cmdline.py flow against RustFS:
 // push, clone and pull, fscheck and fscheck-new, pull-new, fspublish-new
 // and a DRYRUN push.
 func TestRustFSFlow(t *testing.T) {

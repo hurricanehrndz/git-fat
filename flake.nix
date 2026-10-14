@@ -1,60 +1,31 @@
 {
-  description = "Git-fat packaged using poetry2nix";
+  description = "git-fat: store large files outside git";
 
   inputs.flake-utils.url = "github:numtide/flake-utils";
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  inputs.poetry2nix = {
-    url = "github:K900/poetry2nix/new-bootstrap-fixes";
-    inputs.nixpkgs.follows = "nixpkgs";
-  };
 
+  # Dev shell only. There is no packages.default: buildGoModule builds with
+  # GOTOOLCHAIN=local, and go.mod needs a newer Go than nixpkgs ships (go.mod
+  # inherits 1.26.9 from the pinsync test dependency; nixpkgs has 1.26.8).
+  # Add packages.default back (buildGoModule) once nixpkgs' Go is at least
+  # the go.mod version.
   outputs = {
-    self,
     nixpkgs,
     flake-utils,
-    poetry2nix,
     ...
-  } @ inputs:
+  }:
     flake-utils.lib.eachDefaultSystem (system: let
-      # see https://github.com/nix-community/poetry2nix/tree/master#api for more functions and examples.
-      p2n = poetry2nix.legacyPackages.${system};
-      inherit (p2n) mkPoetryApplication;
       pkgs = nixpkgs.legacyPackages.${system};
-      pypkgs-build-requirements = {
-        path-py = ["setuptools"];
-        pytest = ["hatchling"];
-        pytest-env = ["hatchling" "hatch-vcs"];
-        pytest-git = ["setuptools"];
-      };
-      p2n-overrides = p2n.defaultPoetryOverrides.extend (
-        self: super:
-          builtins.mapAttrs (
-            package: build-requirements:
-              (builtins.getAttr package super).overridePythonAttrs (old: {
-                buildInputs =
-                  (old.buildInputs or [])
-                  ++ (builtins.map (pkg:
-                    if builtins.isString pkg
-                    then builtins.getAttr pkg super
-                    else pkg)
-                  build-requirements);
-              })
-          )
-          pypkgs-build-requirements
-      );
     in {
-      packages = {
-        git-fat = mkPoetryApplication {
-          projectDir = self;
-          overrides = p2n-overrides;
-        };
-        default = self.packages.${system}.git-fat;
-      };
-
+      # GOTOOLCHAIN keeps its default (auto), so go downloads the go.mod
+      # version on first use.
       devShells.default = pkgs.mkShell {
-        buildInputs = [
-          pkgs.poetry
-          pkgs.python310
+        packages = with pkgs; [
+          go
+          golangci-lint
+          gofumpt
+          just
+          rustfs # spawned by `go test -tags integration`
         ];
       };
     });

@@ -16,8 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/hurricanehrndz/pinsync/pkg/s3test"
 
-	"github.com/hurricanehrndz/git-fat/pkg/fatconfig"
-	"github.com/hurricanehrndz/git-fat/pkg/fatstore"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatconfig"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatstore"
 )
 
 const partSize = 5 << 20 // S3's minimum part size

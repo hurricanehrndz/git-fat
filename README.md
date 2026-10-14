@@ -1,273 +1,225 @@
-# Introduction
+# git-fat
 
-<code><i><b>Warning</b></i> heavy re-write in progress, docs below could be out of date</code>
+git-fat keeps large binary files out of a git repository while they still
+show up, complete, in the working tree. Git stores a 74-byte stub for each fat
+file. The content goes to `.git/fat/objects` on your machine and to an S3
+bucket (or any S3-compatible store) for everyone else.
 
-Checking large binary files into a source repository (Git or otherwise) is a bad
-idea because repository size quickly becomes unreasonable. Even if the
-instantaneous working tree stays manageable, preserving repository integrity
-requires all binary files in the entire project history, which given the
-typically poor compression of binary diffs, implies that the repository size
-will become impractically large. Some people recommend checking binaries into
-different repositories or even not versioning them at all, but these are not
-satisfying solutions for most workflows.
+Committing binaries directly makes every clone carry every version of every
+binary forever, and binary diffs compress badly. With git-fat, clones stay small
+and fast, history and `git bisect` still work, and each person pulls only the
+fat files they need.
 
-## Features of `git-fat`
+git-fat is a git clean/smudge filter. After `git fat init`, `git add`,
+`git checkout` and friends handle fat files without extra steps. You run
+`git fat push` and `git fat pull` to move content to and from the store.
 
-- clones of the source repository are small and fast because no binaries are
-  transferred, yet fully functional with complete metadata and incremental
-  retrieval (`git clone --depth` has limited granularity and couples metadata to
-  content)
-- `git-fat` supports the same workflow for large binaries and traditionally
-  versioned files, but internally manages the "fat" files separately
-- `git-bisect` works properly even when versions of the binary files change over
-  time
-- selective control of which large files to pull into the local store
-- local fat object stores can be shared between multiple clones, even by
-  different users
-- can easily support fat object stores distributed across multiple hosts
-- depends only on stock Python and rsync
+## Install
 
-## Related projects
+Each `v*` tag publishes these assets plus `SHA256SUMS`:
 
-- [git-annex](http://git-annex.branchable.com) is a far more comprehensive
-  solution, but with less transparent workflow and with more dependencies.
-- [git-media](https://github.com/schacon/git-media) adopts a similar approach to
-  `git-fat`, but with a different synchronization philosophy and with many Ruby
-  dependencies.
+- `git-fat-<version>-linux-x86_64.tar.gz`, `git-fat-<version>-linux-aarch64.tar.gz`
+- `git-fat-<version>-darwin-x86_64.tar.gz`, `git-fat-<version>-darwin-aarch64.tar.gz`
+- `git-fat-<version>-windows-x86_64.zip`
+- `git-fat-<version>-universal.pkg`, a macOS installer with Intel and Apple
+  silicon binaries
 
-# Installation and configuration
+The binary has to be on `PATH` as `git-fat` for `git fat` to work.
 
-Place `git-fat` in your `PATH`.
+With [mise](https://mise.jdx.dev), on any of the platforms above:
 
-Edit (or create) `.gitattributes` to regard any desired extensions as fat files.
+```sh
+mise use -g github:hurricanehrndz/git-fat
+```
 
-    $ cd path-to-your-repository
-    $ cat >> .gitattributes
-    *.png filter=fat -crlf
-    *.jpg filter=fat -crlf
-    *.gz  filter=fat -crlf
-    ^D
+On macOS, the pkg installs `/usr/local/bin/git-fat`. It is not signed yet, so
+Gatekeeper blocks it in Installer.app until you allow it under System Settings,
+Privacy & Security. Installing from a shell works directly:
 
-Run `git fat init` to activate the extension. Now add and commit as usual.
-Matched files will be transparently stored externally, but will appear complete
-in the working tree.
+```sh
+sudo installer -pkg git-fat-<version>-universal.pkg -target /
+```
 
-Set a remote store for the fat objects by editing `.gitfat`.
+On Windows without mise, unzip the archive and put the directory holding
+`git-fat.exe` on `PATH`.
 
-    [rsync]
-    remote = your.remote-host.org:/share/fat-store
+With Go 1.26.9 or newer:
 
-This file should typically be committed to the repository so that others will
-automatically have their remote set. This remote address can use any protocol
-supported by rsync.
+```sh
+go install github.com/hurricanehrndz/git-fat/v2/cmd/git-fat@latest
+```
 
-Most users will configure it to use remote ssh in a directory with shared
-access. To do this, set the `sshuser` and `sshport` variables in `.gitfat`
-configuration file. For example, to use rsync with ssh, with the default port
-(22) and authenticate with the user "_fat_", your configuration would look like
-this:
+## Set up a repository
 
-    [rsync]
-    remote = your.remote-host.org:/share/fat-store
-    sshuser = fat
+Mark the fat files in `.gitattributes`:
 
-To use an Amazon S3 bucket as the backend, you should first install the AWS CLI
-and configure it with a user that has access to the bucket. Your configuration
-would then look like:
+```
+*.png filter=fat -text
+*.zip filter=fat -text
+```
 
-    [s3]
-    bucket = s3://your-s3-bucket
+Describe the store in `.gitfat` at the top of the repository:
 
-# A worked example
+```toml
+[s3]
+bucket = "s3://my-fat-store"
+```
 
-Before we start, let's turn on verbose reporting so we can see what's happening.
-Without this environment variable, all the output lines starting with `git-fat`
-will not be shown.
+Commit both files so every clone uses the same settings, then run once per
+clone:
 
-    $ export GIT_FAT_VERBOSE=1
+```sh
+git fat init
+```
 
-First, we create a repository and configure it for use with `git-fat`.
+`init` sets `filter.fat.clean`, `filter.fat.smudge`, `filter.fat.process` and
+`filter.fat.required` in the repository's local config. Any git-fat command
+runs it for you if the filter is not configured yet.
 
-    $ git init repo
-    Initialized empty Git repository in /tmp/repo/.git/
-    $ cd repo
-    $ git fat init
-    $ cat > .gitfat
-    [rsync]
-    remote = localhost:/tmp/fat-store
-    $ mkdir -p /tmp/fat-store               # make sure the remote directory exists
-    $ echo '*.gz filter=fat -crlf' > .gitattributes
-    $ git add .gitfat .gitattributes
-    $ git commit -m'Initial repository'
-    [master (root-commit) eb7facb] Initial repository
-     2 files changed, 3 insertions(+)
-     create mode 100644 .gitattributes
-     create mode 100644 .gitfat
+From then on, `git add` stores fat files in `.git/fat/objects` and stages their
+stubs. Run `git fat push` before or after `git push` so others can fetch the
+content.
 
-Now we add a binary file whose name matches the pattern we set in
-`.gitattributes`.
+## .gitfat
 
-    $ curl https://nodeload.github.com/jedbrown/git-fat/tar.gz/master -o master.tar.gz
-      % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                     Dload  Upload   Total   Spent    Left  Speed
-    100  6449  100  6449    0     0   7741      0 --:--:-- --:--:-- --:--:--  9786
-    $ git add master.tar.gz
-    git-fat filter-clean: caching to /tmp/repo/.git/fat/objects/b3489819f81603b4c04e8ed134b80bace0810324
-    $ git commit -m'Added master.tar.gz'
-    [master b85a96f] Added master.tar.gz
-    git-fat filter-clean: caching to /tmp/repo/.git/fat/objects/b3489819f81603b4c04e8ed134b80bace0810324
-     1 file changed, 1 insertion(+)
-     create mode 100644 master.tar.gz
+`.gitfat` is TOML. The first table names the store type and must be `[s3]`.
+Keys are case-sensitive, and an unknown key is an error.
 
-The patch itself is very simple and does not include the binary.
+```toml
+[s3]
+bucket = "s3://my-fat-store"   # required; the s3:// prefix is optional
+prefix = "fat/"                # optional key prefix; a trailing / is added
+region = "us-west-2"           # optional, see below
+endpoint = "https://s3.example.com"  # optional S3-compatible endpoint (path-style)
+id = "AKIA..."                 # optional static credentials, used only
+secret = "..."                 # when both id and secret are set
 
-    $ git show --pretty=oneline HEAD
-    918063043a6156172c2ad66478c6edd5c7df0217 Add master.tar.gz
-    diff --git a/master.tar.gz b/master.tar.gz
-    new file mode 100644
-    index 0000000..12f7d52
-    --- /dev/null
-    +++ b/master.tar.gz
-    @@ -0,0 +1 @@
-    +#$# git-fat 1f218834a137f7b185b498924e7a030008aee2ae
+# Applied to every upload. Names and meanings are boto3's ExtraArgs:
+# ACL, CacheControl, ChecksumAlgorithm, ContentDisposition, ContentEncoding,
+# ContentLanguage, ContentType, ExpectedBucketOwner, Expires,
+# GrantFullControl, GrantRead, GrantReadACP, GrantWriteACP, Metadata,
+# ObjectLockLegalHoldStatus, ObjectLockMode, ObjectLockRetainUntilDate,
+# RequestPayer, ServerSideEncryption, StorageClass, SSECustomerAlgorithm,
+# SSECustomerKey, SSECustomerKeyMD5, SSEKMSKeyId, SSEKMSEncryptionContext,
+# Tagging, WebsiteRedirectLocation.
+[s3.xpushargs]
+ACL = "bucket-owner-full-control"
+Metadata = { team = "games" }
+Expires = 2030-01-01T00:00:00Z  # datetimes need a UTC offset
 
-## Pushing fat files
+# Optional second store for `git fat fspublish-new`. It takes the same keys
+# as [s3] except smudgestore.
+[s3.smudgestore]
+bucket = "s3://my-published-files"
+[s3.smudgestore.xpushargs]
+ACL = "public-read"
+```
 
-Now let's push our fat files using the rsync configuration that we set up
-earlier.
+Objects in the fat store are keyed by their SHA1. Files published to the
+smudge store are keyed by their path in the repository, so other systems can
+fetch them by name.
 
-    $ git fat push
-    Pushing to localhost:/tmp/fat-store
-    building file list ...
-    1 file to consider
+**Credentials.** Without `id` and `secret`, git-fat uses the AWS SDK's default
+chain: environment variables, shared config and credentials files (profiles
+and SSO), then instance metadata.
 
-    sent 61 bytes  received 12 bytes  48.67 bytes/sec
-    total size is 6449  speedup is 88.34
+**Region.** git-fat uses the first of: `region` in `.gitfat`, the region from
+the AWS chain (`AWS_REGION`, the profile), `us-east-1` when `endpoint` is set,
+or the bucket's own region, asked from S3 with one anonymous request.
 
-We might normally set a remote now and push the git repository.
+TLS certificates are verified. For a store with a private CA, set
+`AWS_CA_BUNDLE` to the CA's PEM file.
 
-## Cloning and pulling
+## Commands
 
-Now let's look at what happens when we clone.
+```
+git fat init                     configure the fat filters for this repo
+git fat push                     upload cached fat objects the store lacks
+git fat pull (--all | files...)  download fat objects and restore their files
+git fat pull-new [ref]           pull fat objects new in HEAD vs ref (default master)
+git fat fscheck [files...]       check the index's fat objects are in the store
+git fat fscheck-new [ref]        check fat objects staged new vs ref (default master) are in the store
+git fat fspublish-new [ref]      upload files new in HEAD vs ref (default master) to the smudgestore
+git fat version                  print the version
+```
 
-    $ cd ..
-    $ git clone repo repo2
-    Cloning into 'repo2'...
-    done.
-    $ cd repo2
-    $ git fat init                          # don't forget
-    $ ls -l                                 # file is just a placeholder
-    total 4
-    -rw-r--r--  1 jed  users  53 Nov 25 22:42 master.tar.gz
-    $ cat master.tar.gz                     # holds the SHA1 of the file
-    #$# git-fat 1f218834a137f7b185b498924e7a030008aee2ae
+`filter-clean`, `filter-smudge` and `filter-process` are what git calls; you do
+not run them yourself.
 
-We can always get a summary of what fat objects are missing in our local cache.
+`pull` only replaces a working file that still holds its stub, so local edits
+are never overwritten. Every download is checked against the stub's SHA1 and
+size before it enters `.git/fat/objects`. A clone that has no fat objects yet
+shows stubs in place of fat files until you pull.
 
-    Orphan objects:
-    1f218834a137f7b185b498924e7a030008aee2ae
+`GIT_FAT_VERBOSE=1` prints informational messages as well as warnings.
+`DRYRUN=1` makes uploads (`push`, `fspublish-new`) print what they would upload
+instead.
 
-Now get any objects referenced by our current `HEAD`. This command also accepts
-the `--all` option to pull full history, or a revision to pull selected history.
+Fat objects live under git's common directory, so linked worktrees share one
+`fat/objects`.
 
-    $ git fat pull
-    receiving file list ...
-    1 file to consider
-    1f218834a137f7b185b498924e7a030008aee2ae
-            6449 100%    6.15MB/s    0:00:00 (xfer#1, to-check=0/1)
+## pre-commit hooks
 
-    sent 30 bytes  received 6558 bytes  4392.00 bytes/sec
-    total size is 6449  speedup is 0.98
-    Restoring 1f218834a137f7b185b498924e7a030008aee2ae -> master.tar.gz
-    git-fat filter-smudge: restoring from /tmp/repo2/.git/fat/objects/1f218834a137f7b185b498924e7a030008aee2ae
+This repository provides two [pre-commit](https://pre-commit.com) hooks.
+pre-commit builds git-fat from source with Go (`language: golang`).
 
-Everything is in place
+```yaml
+repos:
+  - repo: https://github.com/hurricanehrndz/git-fat
+    rev: v2.0.0
+    hooks:
+      - id: gitfat-check-new   # pre-commit: staged fat objects new vs master are in the store
+      - id: gitfat-check       # pre-merge-commit: fat objects of the files pre-commit passes are in the store
+```
 
-    $ git status
-    git-fat filter-clean: caching to /tmp/repo2/.git/fat/objects/1f218834a137f7b185b498924e7a030008aee2ae
-    # On branch master
-    nothing to commit, working directory clean
-    $ ls -l                                 # recovered the full file
-    total 8
-    -rw-r--r-- 1 jed users 6449 Nov 25 17:10 master.tar.gz
+## Upgrading from 1.x (Python)
 
-## Summary
+2.x reads the same `.gitfat` and writes byte-identical stubs, so existing
+repositories and stores work unchanged. Uninstall the `yelp-gitfat` Python
+package (its `yelp-gitfat` alias is gone) and install git-fat as above. Then:
 
-- Set the "fat" file types in `.gitattributes`.
-- Use normal git commands to interact with the repository without thinking about
-  what files are fat and non-fat. The fat files will be treated specially.
-- Synchronize fat files with `git fat push` and `git fat pull`.
+- Re-run `git fat init` in each existing clone. It adds `filter.fat.process`,
+  which runs one git-fat process per git command instead of one per file, and
+  `filter.fat.required`, which makes `git add` fail when the clean filter fails
+  instead of committing the full file.
+- TLS certificates are verified. 1.x disabled verification. See
+  `AWS_CA_BUNDLE` above for private CAs.
+- Unknown or wrongly cased keys in `[s3]`, `[s3.smudgestore]` and their
+  `xpushargs` are errors. 1.x ignored them. The error names the right spelling
+  when only the case differs.
+- The first table in `.gitfat` must be `[s3]`. 1.x used the first table,
+  whatever its name, as S3 settings.
+- With no region configured, 1.x relied on boto3 following S3's redirects;
+  2.x looks up the bucket's region instead (see Region).
+- Fat objects are stored in `<git common dir>/fat/objects`. This is the same
+  `.git/fat/objects` in a normal clone, and makes linked worktrees work.
+- Smudging content that is not a stub passes it through. 1.x wrote nothing,
+  which emptied the checked-out file.
+- A stub is exactly 74 bytes. A file that merely starts with a stub is
+  treated as content.
+- `pull-new`, `fscheck-new` and `fspublish-new` also catch fat files that
+  changed, not only those added. `fscheck-new` checks the index (what is about
+  to be committed) instead of the working tree.
+- `pull` restores any working file that still holds its stub, even when the
+  object was already cached, and leaves files with local changes alone. It
+  verifies each download's SHA1 and size and keeps the working file's
+  permission bits (1.x made restored files read-only). As before, the file
+  gets the cached object's modification time.
+- `fspublish-new` no longer restores working files on the way.
+- `push` warns about fat objects that are neither cached locally nor in the
+  store, since nobody can fetch them.
 
-## Retroactive import using `git filter-branch` [Experimental]
+The rsync store and the retroactive import (`git fat find`,
+`git fat index-filter`) from the original git-fat are not supported in 2.x.
 
-Sometimes large objects were added to a repository by accident or for lack of a
-better place to put them. _If_ you are willing to rewrite history, forcing
-everyone to reclone, you can retroactively manage those files with `git fat`. Be
-sure that you understand the consequences of `git filter-branch` before
-attempting this. This feature is experimental and irreversible, so be doubly
-careful with backups.
+## Build
 
-### Step 1: Locate the fat files
+```sh
+go build ./cmd/git-fat   # or: just build
+just test                # unit and end-to-end tests
+just integration         # adds the S3 tests; needs rustfs on PATH
+just lint
+```
 
-Run `git fat find THRESH_BYTES > fat-files` and inspect `fat-files` in an
-editor. Lines will be sorted by the maximum object size that has been at each
-path, and look like
-
-    something.big           filter=fat -text #    8154677 1
-
-where the first number after the `#` is the number of bytes and the second
-number is the number of modifications that path has seen. You will normally
-filter out some of these paths using grep and/or an editor. When satisfied,
-remove the ends of the lines (including the `#`) and append to `.gitattributes`.
-It's best to `git add .gitattributes` and commit at this time (likely enrolling
-some extant files into `git fat`).
-
-### Step 2: `filter-branch`
-
-Copy `.gitattributes` to `/tmp/fat-filter-files` and edit to remove everything
-after the file name (e.g., `sed s/ \+filter=fat.*$//`). Currently, this may only
-contain exact paths relative to the root of the repository. Finally, run
-
-    git filter-branch --index-filter                 \
-        'git fat index-filter /tmp/fat-filter-files --manage-gitattributes' \
-        --tag-name-filter cat -- --all
-
-(You can remove the `--manage-gitattributes` option if you don't want to append
-all the files being enrolled in `git fat` to `.gitattributes`, however, future
-users would need to use `.git/info/attributes` to have the `git fat` fileters
-run.) When this finishes, inspect to see if everything is in order and follow
-the
-[Checklist for Shrinking a Repository](http://www.kernel.org/pub/software/scm/git/docs/git-filter-branch.html#_checklist_for_shrinking_a_repository)
-in the `git filter-branch` man page, typically `git clone file:///path/to/repo`.
-Be sure to `git fat push` from the original repository.
-
-See the script `test-retroactive.sh` for an example of cleaning.
-
-## Implementation notes
-
-The actual binary files are stored in `.git/fat/objects`, leaving `.git/objects`
-nice and small.
-
-    $ du -bs .git/objects
-    2212    .git/objects/
-    $ ls -l .git/fat/objects                # This is where the file actually goes, but that's not important
-    total 8
-    -rw------- 1 jed users 6449 Nov 25 17:01 1f218834a137f7b185b498924e7a030008aee2ae
-
-If you have multiple clones that access the same filesystem, you can make
-`.git/fat/objects` a symlink to a common location, in which case all content
-will be available in all repositories without extra copies. You still need to
-`git fat push` to make it available to others.
-
-# Some refinements
-
-- Allow pulling and pushing only select files
-- Relate orphan objects to file system
-- Put some more useful message in smudged (working tree) version of missing
-  files.
-- More friendly configuration for multiple fat remotes
-- Make commands safer in presence of a dirty tree.
-- Private setting of a different remote.
-- Gracefully handle unmanaged files when the filter is called (either legacy
-  files or files matching the pattern that should some reason not be treated as
-  fat).
+`nix develop` (or direnv) gives a shell with Go, golangci-lint, just and
+rustfs. Releases bump the version with `just bump [patch|minor|major]`.

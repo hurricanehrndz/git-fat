@@ -1,0 +1,192 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  EMBALA_VERSION: 0.3.0
+jobs:
+  meta:
+    runs-on: ubuntu-26.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: version
+        name: Resolve and check the version
+        shell: bash
+        run: |
+          version=$(awk -F'"' '/^const version = / { print $2 }' cmd/git-fat/main.go)
+          config_version=$(awk -F'"' '/^version = / { print $2; exit }' embala.toml)
+          bump_version=$(awk -F'"' '/^version: / { print $2; exit }' versionbump.yaml)
+
+          if [ -z "$version" ] || [ "$version" != "$config_version" ] || [ "$version" != "$bump_version" ]; then
+            echo "::error::version mismatch: binary=$version embala=$config_version versionbump=$bump_version"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match version v$version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+  verify:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: cachix/install-nix-action@v31
+      # Same rustfs as ci.yml and the devshell: the nixpkgs rev in flake.lock.
+      - name: Install RustFS from the flake.lock nixpkgs pin
+        run: |
+          rev=$(jq -er .nodes.nixpkgs.locked.rev flake.lock)
+          out=$(nix build --no-link --print-out-paths "github:NixOS/nixpkgs/$rev#rustfs")
+          "$out/bin/rustfs" --version | head -1
+          echo "$out/bin" >> "$GITHUB_PATH"
+      - run: go vet ./...
+      - run: go test -tags integration ./...
+  # Asset names carry the OS and arch so mise's github: backend can pick one;
+  # each archive holds the binary at its root plus README.md and LICENSE.
+  linux-windows:
+    needs: [meta, verify]
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build Linux archives
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          for target in amd64:x86_64:x86-64 arm64:aarch64:ARM.aarch64; do
+            IFS=: read -r goarch arch filearch <<< "$target"
+            dir="staging/linux-$arch"
+            mkdir -p "$dir"
+            CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" \
+              go build -trimpath -ldflags="-s -w" -o "$dir/git-fat" ./cmd/git-fat
+            file "$dir/git-fat" | tee /dev/stderr | grep -q "ELF 64-bit.*$filearch.*statically linked"
+            cp README.md LICENSE "$dir/"
+            tar -czf "git-fat-$VERSION-linux-$arch.tar.gz" -C "$dir" git-fat README.md LICENSE
+          done
+      - name: Build Windows archive
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          dir=staging/windows-x86_64
+          mkdir -p "$dir"
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+            go build -trimpath -ldflags="-s -w" -o "$dir/git-fat.exe" ./cmd/git-fat
+          file "$dir/git-fat.exe" | tee /dev/stderr | grep -q "PE32+ executable.*x86-64"
+          cp README.md LICENSE "$dir/"
+          (cd "$dir" && zip -X "$GITHUB_WORKSPACE/git-fat-$VERSION-windows-x86_64.zip" git-fat.exe README.md LICENSE)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-windows-release
+          path: |
+            git-fat-*-linux-*.tar.gz
+            git-fat-*-windows-*.zip
+          if-no-files-found: error
+  # Darwin builds here, not on ubuntu, because the pkg's universal binary
+  # needs lipo.
+  macos:
+    needs: [meta, verify]
+    runs-on: macos-latest
+    env:
+      # Keep macOS tar from adding AppleDouble ._ entries to the archives.
+      COPYFILE_DISABLE: 1
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build darwin archives and the universal binary
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          for target in amd64:x86_64:x86_64 arm64:aarch64:arm64; do
+            IFS=: read -r goarch arch filearch <<< "$target"
+            dir="staging/darwin-$arch"
+            mkdir -p "$dir"
+            CGO_ENABLED=0 GOOS=darwin GOARCH="$goarch" \
+              go build -trimpath -ldflags="-s -w" -o "$dir/git-fat" ./cmd/git-fat
+            file "$dir/git-fat" | tee /dev/stderr | grep -q "Mach-O 64-bit.*$filearch"
+            cp README.md LICENSE "$dir/"
+            tar -czf "git-fat-$VERSION-darwin-$arch.tar.gz" -C "$dir" git-fat README.md LICENSE
+          done
+          mkdir -p dist
+          lipo -create \
+            staging/darwin-aarch64/git-fat \
+            staging/darwin-x86_64/git-fat \
+            -output dist/git-fat-darwin-universal
+          lipo dist/git-fat-darwin-universal -verify_arch arm64 x86_64
+      - name: Install pinned embala
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/downloads" "$RUNNER_TEMP/bin"
+
+          embala_asset="embala-$EMBALA_VERSION-aarch64-apple-darwin.tar.gz"
+          gh release download "v$EMBALA_VERSION" \
+            --repo hurricanehrndz/embala \
+            --pattern "$embala_asset" \
+            --pattern SHA256SUMS \
+            --dir "$RUNNER_TEMP/downloads"
+          embala_sum=$(awk -v asset="$embala_asset" '$2 == asset { print $1 }' "$RUNNER_TEMP/downloads/SHA256SUMS")
+          test -n "$embala_sum"
+          test "$(shasum -a 256 "$RUNNER_TEMP/downloads/$embala_asset" | awk '{ print $1 }')" = "$embala_sum"
+          tar -xzf "$RUNNER_TEMP/downloads/$embala_asset" \
+            -C "$RUNNER_TEMP/bin" --strip-components=1
+
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # Unsigned: see the [sign] comment in embala.toml.
+      - name: Build the pkg with embala
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          chmod +x dist/git-fat-darwin-universal
+          embala build --config embala.toml --formats pkg --out-dir release
+          mv "release/git-fat-$VERSION.pkg" "git-fat-$VERSION-universal.pkg"
+          pkgutil --payload-files "git-fat-$VERSION-universal.pkg" | tee /dev/stderr | grep -qx ./bin/git-fat
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-release
+          path: |
+            git-fat-*-darwin-*.tar.gz
+            git-fat-*-universal.pkg
+          if-no-files-found: error
+  release:
+    needs: [meta, linux-windows, macos]
+    if: github.ref_type == 'tag'
+    permissions:
+      contents: write
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-windows-release
+          path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos-release
+          path: dist
+      - name: Checksums
+        run: cd dist && sha256sum git-fat-* | tee SHA256SUMS
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "git-fat $VERSION" \
+            --generate-notes \
+            dist/*

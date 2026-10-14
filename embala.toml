@@ -1,0 +1,23 @@
+[package]
+name = "git-fat"
+display-name = "git-fat"
+version = "2.0.0"
+identifier = "com.github.hurricanehrndz.git-fat"
+publisher = "hurricanehrndz"
+description = "Git filter that stores large files in S3 instead of the repository"
+homepage = "https://github.com/hurricanehrndz/git-fat"
+
+# No [msi]: embala's MSI cannot add its install directory to PATH, and
+# `git fat` only works when git-fat is on PATH. Windows users get the zip
+# release asset instead (mise puts it on PATH).
+
+# One universal binary covers Intel and Apple silicon. /usr/local/bin is on
+# the default PATH, so `git fat` works right after install.
+[pkg]
+install-location = "/usr/local"
+files = [{ src = "dist/git-fat-darwin-universal", dest = "bin/git-fat" }]
+
+# No [sign]: the pkg is unsigned for now because this repo has no signing
+# secrets. To sign and notarize, add the MACOS_* secrets to this repo and copy
+# pinsync's [sign.macos] section and its release.yml signing and notarization
+# steps.

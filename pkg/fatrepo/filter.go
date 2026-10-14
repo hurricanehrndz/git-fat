@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hurricanehrndz/git-fat/pkg/fatstub"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatstub"
 )
 
 // blockSize is how much of the input Clean inspects for an existing stub.

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hurricanehrndz/git-fat/pkg/fatstub"
+	"github.com/hurricanehrndz/git-fat/v2/pkg/fatstub"
 )
 
 // TestEncodeMatchesPythonGolden pins the stub bytes to ones written by the
@@ -16,8 +16,8 @@ import (
 // make every fat file look modified.
 func TestEncodeMatchesPythonGolden(t *testing.T) {
 	cases := []struct{ input, golden string }{
-		{"../../tests/testresources/s3/a.fat", "testdata/a.fat.stub"},
-		{"../../tests/testresources/utils/test_fatrepo/test_filter_clean/cool-ranch.webp", "testdata/cool-ranch.webp.stub"},
+		{"testdata/a.fat", "testdata/a.fat.stub"},
+		{"testdata/cool-ranch.webp", "testdata/cool-ranch.webp.stub"},
 	}
 	for _, c := range cases {
 		content, err := os.ReadFile(c.input)

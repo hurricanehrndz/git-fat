@@ -1,2 +1,0 @@
-class NoArgs:
-    pass
