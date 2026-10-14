@@ -14,20 +14,27 @@ import (
 // a region; S3-compatible servers ignore it. boto3 used it everywhere.
 const fallbackRegion = "us-east-1"
 
-// resolveRegion picks the client region: .gitfat's, else the default chain's,
-// else us-east-1 for a custom endpoint, else the bucket's own as discover
-// reports it. boto3 needed no discovery because it followed S3's region
-// redirects; the Go SDK does not, so a wrong guess would fail every request.
+// resolveRegion picks the client region: .gitfat's; for a custom endpoint the
+// default chain's, else us-east-1; on AWS the bucket's own as discover reports
+// it, else the chain's when discovery fails. boto3 needed no discovery because
+// it followed S3's region redirects; the Go SDK does not, so a wrong region
+// fails every request. On AWS the bucket's region beats the chain's, which
+// names one region for every bucket and service: AWS_REGION or a profile
+// region would otherwise break each store in another region.
 func resolveRegion(ctx context.Context, configured, chain, endpoint string, discover func(context.Context) (string, error)) (string, error) {
 	switch {
 	case configured != "":
 		return configured, nil
-	case chain != "":
+	case endpoint != "" && chain != "":
 		return chain, nil
 	case endpoint != "":
 		return fallbackRegion, nil
 	}
-	return discover(ctx)
+	region, err := discover(ctx)
+	if err != nil && chain != "" {
+		return chain, nil
+	}
+	return region, err
 }
 
 // bucketRegion asks S3 which region holds bucket. The request is anonymous so
