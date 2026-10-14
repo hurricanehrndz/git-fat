@@ -9,7 +9,7 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 env:
-  EMBALA_VERSION: 0.3.0
+  EMBALA_VERSION: 0.4.0
   APPLE_CODESIGN_VERSION: 0.29.0
 jobs:
   meta:
@@ -87,13 +87,75 @@ jobs:
           file "$dir/git-fat.exe" | tee /dev/stderr | grep -q "PE32+ executable.*x86-64"
           cp README.md LICENSE "$dir/"
           (cd "$dir" && zip -X "$GITHUB_WORKSPACE/git-fat-$VERSION-windows-x86_64.zip" git-fat.exe README.md LICENSE)
+      - name: Install pinned embala
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/downloads" "$RUNNER_TEMP/bin"
+          asset="embala-$EMBALA_VERSION-x86_64-unknown-linux-musl.tar.gz"
+          gh release download "v$EMBALA_VERSION" \
+            --repo hurricanehrndz/embala \
+            --pattern "$asset" \
+            --pattern SHA256SUMS \
+            --dir "$RUNNER_TEMP/downloads"
+          (cd "$RUNNER_TEMP/downloads" && grep "  $asset\$" SHA256SUMS | sha256sum -c -)
+          tar -xzf "$RUNNER_TEMP/downloads/$asset" -C "$RUNNER_TEMP/bin" --strip-components=1
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # Unsigned, like the zip: there is no Windows signing certificate. The
+      # name has no "windows" in it so mise's github: backend keeps picking
+      # the zip.
+      - name: Build the MSI with embala
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          embala build --config embala.toml --formats msi --out-dir release
+          mv "release/git-fat-$VERSION-x86_64.msi" .
       - uses: actions/upload-artifact@v7
         with:
           name: linux-windows-release
           path: |
             git-fat-*-linux-*.tar.gz
             git-fat-*-windows-*.zip
+            git-fat-*-x86_64.msi
           if-no-files-found: error
+  # The MSI exists so git-fat lands on PATH; install it on real Windows and
+  # check that, then that uninstalling puts PATH back.
+  msi-smoke:
+    needs: [meta, linux-windows]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-windows-release
+          path: dist
+      - name: Install, run and uninstall the MSI
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = (Resolve-Path "dist/git-fat-$env:VERSION-x86_64.msi").Path
+          $dir = Join-Path $env:ProgramFiles 'git-fat'
+          function MachinePath { [Environment]::GetEnvironmentVariable('Path', 'Machine') }
+          function OnPath { (MachinePath) -split ';' | Where-Object { $_.TrimEnd('\') -ieq $dir } }
+          $before = MachinePath
+
+          $p = Start-Process msiexec -ArgumentList '/i', "`"$msi`"", '/qn', '/l*v', 'install.log' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content install.log -Tail 50; throw "install exited $($p.ExitCode)" }
+          if (-not (OnPath)) { throw "$dir is not on the machine PATH: $(MachinePath)" }
+          # A new process sees the machine PATH; this step's does not.
+          $env:Path = (MachinePath) + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+          $got = (Get-Command git-fat).Source
+          Write-Output "git-fat resolves to $got"
+          $v = & git-fat version
+          if ($v -ne $env:VERSION) { throw "git-fat version printed '$v', want $env:VERSION" }
+          & git fat version
+          if ($LASTEXITCODE -ne 0) { throw 'git fat version failed' }
+
+          $p = Start-Process msiexec -ArgumentList '/x', "`"$msi`"", '/qn', '/l*v', 'uninstall.log' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content uninstall.log -Tail 50; throw "uninstall exited $($p.ExitCode)" }
+          if (OnPath) { throw "$dir is still on the machine PATH after uninstall" }
+          if ((MachinePath) -ne $before) { throw "machine PATH changed across install and uninstall:`n$before`n$(MachinePath)" }
   # Darwin builds here, not on ubuntu, because the pkg's universal binary
   # needs lipo.
   macos:
@@ -259,7 +321,7 @@ jobs:
             git-fat-*-universal.pkg
           if-no-files-found: error
   release:
-    needs: [meta, linux-windows, macos]
+    needs: [meta, linux-windows, msi-smoke, macos]
     if: github.ref_type == 'tag'
     permissions:
       contents: write

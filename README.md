@@ -21,6 +21,8 @@ Each `v*` tag publishes these assets plus `SHA256SUMS`:
 - `git-fat-<version>-linux-x86_64.tar.gz`, `git-fat-<version>-linux-aarch64.tar.gz`
 - `git-fat-<version>-darwin-x86_64.tar.gz`, `git-fat-<version>-darwin-aarch64.tar.gz`
 - `git-fat-<version>-windows-x86_64.zip`
+- `git-fat-<version>-x86_64.msi`, a Windows installer that puts git-fat on
+  `PATH`
 - `git-fat-<version>-universal.pkg`, a macOS installer with Intel and Apple
   silicon binaries
 
@@ -40,8 +42,11 @@ Installer.app or a shell:
 sudo installer -pkg git-fat-<version>-universal.pkg -target /
 ```
 
-On Windows without mise, unzip the archive and put the directory holding
-`git-fat.exe` on `PATH`.
+On Windows without mise, run the MSI. It installs `C:\Program Files\git-fat`
+and appends that directory to the system `PATH`, so open a new terminal
+afterwards. Uninstalling removes it from `PATH` again. The MSI is not signed,
+so SmartScreen may warn before it runs. Silent install:
+`msiexec /i git-fat-<version>-x86_64.msi /qn`.
 
 With Go 1.26.9 or newer:
 
