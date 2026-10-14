@@ -170,7 +170,7 @@ pre-commit builds git-fat from source with Go (`language: golang`).
 ```yaml
 repos:
   - repo: https://github.com/hurricanehrndz/git-fat
-    rev: v2.0.0
+    rev: v2.1.0
     hooks:
       - id: gitfat-check-new   # pre-commit: staged fat objects new vs master are in the store
         # args: [main]           # compare against another ref
