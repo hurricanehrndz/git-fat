@@ -10,6 +10,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/hurricanehrndz/git-fat/pkg/fatstub"
 )
 
 func TestRunVersion(t *testing.T) {
@@ -134,6 +137,107 @@ func TestEndToEnd(t *testing.T) {
 	}
 	if st := sh(t, clone, "git", "status", "--porcelain"); st != "" {
 		t.Fatalf("clone status not clean:\n%s", st)
+	}
+}
+
+// processOnly makes the process filter the only working one in dir. The
+// one-shot commands are set to `false` rather than unset: unsetting
+// filter.fat.clean would make the next git-fat start auto-init and restore
+// them, and with the filter required a fallback to `false` fails loudly.
+func processOnly(t *testing.T, dir string) {
+	t.Helper()
+	if got := sh(t, dir, "git", "config", "--get", "filter.fat.process"); got != "git fat filter-process\n" {
+		t.Fatalf("filter.fat.process = %q", got)
+	}
+	sh(t, dir, "git", "config", "--local", "filter.fat.clean", "false")
+	sh(t, dir, "git", "config", "--local", "filter.fat.smudge", "false")
+}
+
+// TestFilterProcess drives several files, one larger than a packet, through
+// the long-running filter in both directions.
+func TestFilterProcess(t *testing.T) {
+	buildGitFat(t)
+	src := newFatRepo(t)
+	processOnly(t, src)
+	files := map[string]string{
+		"b.fat":   "fat content b\n",
+		"c.fat":   "fat content c\n",
+		"big.fat": strings.Repeat("0123456789abcdef", 20000), // 320000 bytes
+	}
+	for name, content := range files {
+		writeFile(t, filepath.Join(src, name), content)
+	}
+	sh(t, src, "git", "add", ".")
+	sh(t, src, "git", "commit", "-q", "-m", "add more")
+	files["a.fat"] = "fat content a\n"
+	for name := range files {
+		if blob := sh(t, src, "git", "cat-file", "-p", "HEAD:"+name); !fatstub.IsStub([]byte(blob)) {
+			t.Fatalf("committed %s is not a stub: %.80q", name, blob)
+		}
+	}
+
+	clone := filepath.Join(t.TempDir(), "clone")
+	sh(t, "", "git", "clone", "-q", src, clone)
+	sh(t, clone, "git", "fat", "init")
+	processOnly(t, clone)
+	objs := filepath.Join(".git", "fat", "objects")
+	entries, err := os.ReadDir(filepath.Join(src, objs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		writeFile(t, filepath.Join(clone, objs, e.Name()), readFile(t, filepath.Join(src, objs, e.Name())))
+	}
+	for name := range files {
+		if err = os.Remove(filepath.Join(clone, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sh(t, clone, "git", "checkout", "--", ".")
+	for name, content := range files {
+		if got := readFile(t, filepath.Join(clone, name)); got != content {
+			t.Fatalf("clone %s = %d bytes, want %d", name, len(got), len(content))
+		}
+	}
+	if st := sh(t, clone, "git", "status", "--porcelain"); st != "" {
+		t.Fatalf("clone status not clean:\n%s", st)
+	}
+}
+
+// TestFilterProcessLargeNonStub checks out a blob committed before the filter
+// applied. Git sends it whole before reading the reply, so a filter that
+// answers while input is pending deadlocks on the full pipes.
+func TestFilterProcessLargeNonStub(t *testing.T) {
+	buildGitFat(t)
+	src := newFatRepo(t)
+	processOnly(t, src)
+	attrs := filepath.Join(src, ".gitattributes")
+	content := strings.Repeat("0123456789abcdef", 3<<16) // 3 MiB
+	writeFile(t, attrs, "")
+	writeFile(t, filepath.Join(src, "big.fat"), content)
+	sh(t, src, "git", "add", "big.fat")
+	sh(t, src, "git", "commit", "-q", "-m", "add big.fat unfiltered")
+	writeFile(t, attrs, "*.fat filter=fat -crlf\n")
+	if blob := sh(t, src, "git", "cat-file", "-p", "HEAD:big.fat"); blob != content {
+		t.Fatalf("committed big.fat is %d bytes, want the %d-byte content", len(blob), len(content))
+	}
+
+	if err := os.Remove(filepath.Join(src, "big.fat")); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "checkout", "--", "big.fat")
+	cmd.Dir = src
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout: %v (ctx: %v)\n%s", err, ctx.Err(), out)
+	}
+	if got := readFile(t, filepath.Join(src, "big.fat")); got != content {
+		t.Fatalf("big.fat = %d bytes, want %d", len(got), len(content))
+	}
+	tmps, err := filepath.Glob(filepath.Join(src, ".git", "fat", "objects", "tmp-*"))
+	if err != nil || len(tmps) != 0 {
+		t.Fatalf("temp files left behind: %q, %v", tmps, err)
 	}
 }
 

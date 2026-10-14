@@ -15,9 +15,10 @@ import (
 )
 
 const usage = `usage:
-  git-fat init            configure the fat clean and smudge filters for this repo
+  git-fat init            configure the fat filters for this repo
   git-fat filter-clean    read file content on stdin, cache it, write its stub to stdout
   git-fat filter-smudge   read a stub on stdin, write the cached content to stdout
+  git-fat filter-process  serve git's long-running filter protocol on stdin and stdout
   git-fat version         print the git-fat version and exit (also -v, --version)`
 
 // version is the git-fat release version.
@@ -46,7 +47,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	case "version", "-v", "--version":
 		_, err := fmt.Fprintln(stdout, version)
 		return err
-	case "init", "filter-clean", "filter-smudge":
+	case "init", "filter-clean", "filter-smudge", "filter-process":
 	default:
 		return fmt.Errorf("unknown subcommand %q\n%s", sub, usage)
 	}
@@ -72,6 +73,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return err
 	case "filter-clean":
 		return repo.Clean(stdin, stdout)
+	case "filter-process":
+		return repo.Process(stdin, stdout)
 	default:
 		return repo.Smudge(stdin, stdout)
 	}

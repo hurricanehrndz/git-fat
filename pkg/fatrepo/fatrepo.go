@@ -62,10 +62,15 @@ func Open(ctx context.Context, dir string, stderr io.Writer) (*Repo, error) {
 // overwriting any existing values. It also marks the filter required, which
 // Python did not: otherwise git treats a failed clean as a pass-through and
 // commits the full file instead of its stub.
+//
+// It sets the long-running process filter too, which git prefers so one
+// process serves a whole command. The clean and smudge commands stay for tools
+// that do not speak the process protocol, such as libgit2 and JGit.
 func (r *Repo) Init(ctx context.Context) error {
 	for _, kv := range [][2]string{
 		{"filter.fat.clean", "git fat filter-clean"},
 		{"filter.fat.smudge", "git fat filter-smudge"},
+		{"filter.fat.process", "git fat filter-process"},
 		{"filter.fat.required", "true"},
 	} {
 		if _, err := git(ctx, r.Dir, "config", "--local", kv[0], kv[1]); err != nil {
