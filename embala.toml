@@ -17,7 +17,7 @@ homepage = "https://github.com/hurricanehrndz/git-fat"
 install-location = "/usr/local"
 files = [{ src = "dist/git-fat-darwin-universal", dest = "bin/git-fat" }]
 
-# No [sign]: the pkg is unsigned for now because this repo has no signing
-# secrets. To sign and notarize, add the MACOS_* secrets to this repo and copy
-# pinsync's [sign.macos] section and its release.yml signing and notarization
-# steps.
+# The release workflow supplies these paths. embala invokes rcodesign after it
+# builds the package, so the installer signature covers the finished XAR.
+[sign.macos]
+command = "rcodesign sign --p12-file \"$MACOS_INSTALLER_P12\" --p12-password-file \"$MACOS_INSTALLER_P12_PASSWORD_FILE\" $f"

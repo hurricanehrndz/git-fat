@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 env:
   EMBALA_VERSION: 0.3.0
+  APPLE_CODESIGN_VERSION: 0.29.0
 jobs:
   meta:
     runs-on: ubuntu-26.04
@@ -106,27 +107,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Build darwin archives and the universal binary
-        env:
-          VERSION: ${{ needs.meta.outputs.version }}
-        run: |
-          for target in amd64:x86_64:x86_64 arm64:aarch64:arm64; do
-            IFS=: read -r goarch arch filearch <<< "$target"
-            dir="staging/darwin-$arch"
-            mkdir -p "$dir"
-            CGO_ENABLED=0 GOOS=darwin GOARCH="$goarch" \
-              go build -trimpath -ldflags="-s -w" -o "$dir/git-fat" ./cmd/git-fat
-            file "$dir/git-fat" | tee /dev/stderr | grep -q "Mach-O 64-bit.*$filearch"
-            cp README.md LICENSE "$dir/"
-            tar -czf "git-fat-$VERSION-darwin-$arch.tar.gz" -C "$dir" git-fat README.md LICENSE
-          done
-          mkdir -p dist
-          lipo -create \
-            staging/darwin-aarch64/git-fat \
-            staging/darwin-x86_64/git-fat \
-            -output dist/git-fat-darwin-universal
-          lipo dist/git-fat-darwin-universal -verify_arch arm64 x86_64
-      - name: Install pinned embala
+      - name: Install pinned packaging tools
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -145,8 +126,96 @@ jobs:
           tar -xzf "$RUNNER_TEMP/downloads/$embala_asset" \
             -C "$RUNNER_TEMP/bin" --strip-components=1
 
+          codesign_asset="apple-codesign-$APPLE_CODESIGN_VERSION-macos-universal.tar.gz"
+          gh release download "apple-codesign/$APPLE_CODESIGN_VERSION" \
+            --repo indygreg/apple-platform-rs \
+            --pattern "$codesign_asset" \
+            --pattern "$codesign_asset.sha256" \
+            --dir "$RUNNER_TEMP/downloads"
+          codesign_sum=$(tr -d '[:space:]' < "$RUNNER_TEMP/downloads/$codesign_asset.sha256")
+          test "$(shasum -a 256 "$RUNNER_TEMP/downloads/$codesign_asset" | awk '{ print $1 }')" = "$codesign_sum"
+          tar -xzf "$RUNNER_TEMP/downloads/$codesign_asset" \
+            -C "$RUNNER_TEMP/bin" --strip-components=1
+
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      # Unsigned: see the [sign] comment in embala.toml.
+      - name: Write signing credentials
+        env:
+          APPLICATION_P12_BASE64: ${{ secrets.MACOS_APPLICATION_CERTIFICATE_P12 }}
+          APPLICATION_P12_PASSWORD: ${{ secrets.MACOS_APPLICATION_CERTIFICATE_PASSWORD }}
+          INSTALLER_P12_BASE64: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_P12 }}
+          INSTALLER_P12_PASSWORD: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_PASSWORD }}
+          NOTARY_API_KEY_JSON: ${{ secrets.MACOS_NOTARY_API_KEY_JSON }}
+        shell: bash
+        run: |
+          : "${APPLICATION_P12_BASE64:?MACOS_APPLICATION_CERTIFICATE_P12 is required}"
+          : "${APPLICATION_P12_PASSWORD:?MACOS_APPLICATION_CERTIFICATE_PASSWORD is required}"
+          : "${INSTALLER_P12_BASE64:?MACOS_INSTALLER_CERTIFICATE_P12 is required}"
+          : "${INSTALLER_P12_PASSWORD:?MACOS_INSTALLER_CERTIFICATE_PASSWORD is required}"
+          : "${NOTARY_API_KEY_JSON:?MACOS_NOTARY_API_KEY_JSON is required}"
+
+          mkdir -p "$RUNNER_TEMP/signing"
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+
+          signing = Path(os.environ["RUNNER_TEMP"]) / "signing"
+          signing.joinpath("application.p12").write_bytes(
+              base64.b64decode(os.environ["APPLICATION_P12_BASE64"], validate=True)
+          )
+          signing.joinpath("installer.p12").write_bytes(
+              base64.b64decode(os.environ["INSTALLER_P12_BASE64"], validate=True)
+          )
+          # Output of `rcodesign encode-app-store-connect-api-key`; parse it so a
+          # malformed secret fails here, not after the upload.
+          key = json.loads(os.environ["NOTARY_API_KEY_JSON"])
+          signing.joinpath("notary-api-key.json").write_text(json.dumps(key))
+          PY
+          printf '%s' "$APPLICATION_P12_PASSWORD" > "$RUNNER_TEMP/signing/application-password"
+          printf '%s' "$INSTALLER_P12_PASSWORD" > "$RUNNER_TEMP/signing/installer-password"
+          chmod 600 "$RUNNER_TEMP/signing/"*
+
+          {
+            echo "MACOS_APPLICATION_P12=$RUNNER_TEMP/signing/application.p12"
+            echo "MACOS_APPLICATION_P12_PASSWORD_FILE=$RUNNER_TEMP/signing/application-password"
+            echo "MACOS_INSTALLER_P12=$RUNNER_TEMP/signing/installer.p12"
+            echo "MACOS_INSTALLER_P12_PASSWORD_FILE=$RUNNER_TEMP/signing/installer-password"
+            echo "MACOS_NOTARY_API_KEY_FILE=$RUNNER_TEMP/signing/notary-api-key.json"
+          } >> "$GITHUB_ENV"
+      # The archives get the signed thin binaries and the pkg a lipo of the
+      # same ones, so notarizing the pkg covers the archived binaries too:
+      # notarization tickets are per code hash, not per file.
+      - name: Build and sign darwin archives and the universal binary
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          for target in amd64:x86_64:x86_64 arm64:aarch64:arm64; do
+            IFS=: read -r goarch arch filearch <<< "$target"
+            dir="staging/darwin-$arch"
+            mkdir -p "$dir"
+            CGO_ENABLED=0 GOOS=darwin GOARCH="$goarch" \
+              go build -trimpath -ldflags="-s -w" -o "$dir/git-fat" ./cmd/git-fat
+            file "$dir/git-fat" | tee /dev/stderr | grep -q "Mach-O 64-bit.*$filearch"
+            rcodesign sign \
+              --p12-file "$MACOS_APPLICATION_P12" \
+              --p12-password-file "$MACOS_APPLICATION_P12_PASSWORD_FILE" \
+              --binary-identifier com.github.hurricanehrndz.git-fat \
+              --code-signature-flags runtime \
+              "$dir/git-fat"
+            codesign --verify --strict --verbose=2 "$dir/git-fat"
+            cp README.md LICENSE "$dir/"
+            tar -czf "git-fat-$VERSION-darwin-$arch.tar.gz" -C "$dir" git-fat README.md LICENSE
+          done
+          mkdir -p dist
+          lipo -create \
+            staging/darwin-aarch64/git-fat \
+            staging/darwin-x86_64/git-fat \
+            -output dist/git-fat-darwin-universal
+          lipo dist/git-fat-darwin-universal -verify_arch arm64 x86_64
+          codesign --verify --strict --all-architectures --verbose=2 dist/git-fat-darwin-universal
+      # embala signs the pkg with the installer certificate; see [sign.macos]
+      # in embala.toml.
       - name: Build the pkg with embala
         env:
           VERSION: ${{ needs.meta.outputs.version }}
@@ -155,6 +224,33 @@ jobs:
           embala build --config embala.toml --formats pkg --out-dir release
           mv "release/git-fat-$VERSION.pkg" "git-fat-$VERSION-universal.pkg"
           pkgutil --payload-files "git-fat-$VERSION-universal.pkg" | tee /dev/stderr | grep -qx ./bin/git-fat
+          pkgutil --check-signature "git-fat-$VERSION-universal.pkg"
+      - name: Notarize and staple the pkg
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          pkg="git-fat-$VERSION-universal.pkg"
+          rcodesign notary-submit \
+            --api-key-file "$MACOS_NOTARY_API_KEY_FILE" \
+            --max-wait-seconds 1800 \
+            --staple \
+            "$pkg"
+          xcrun stapler validate "$pkg"
+          spctl --assess --type install -vv "$pkg"
+      # A bare binary cannot be stapled; Gatekeeper looks its ticket up
+      # online, which this does too. Retried while Apple publishes the ticket.
+      - name: Check the archived binaries are notarized
+        run: |
+          for bin in staging/darwin-*/git-fat; do
+            for _ in 1 2 3 4 5 6; do
+              if codesign --verify --check-notarization -R=notarized --verbose=2 "$bin"; then
+                continue 2
+              fi
+              sleep 10
+            done
+            echo "::error::$bin is not notarized"
+            exit 1
+          done
       - uses: actions/upload-artifact@v7
         with:
           name: macos-release

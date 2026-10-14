@@ -32,9 +32,9 @@ With [mise](https://mise.jdx.dev), on any of the platforms above:
 mise use -g github:hurricanehrndz/git-fat
 ```
 
-On macOS, the pkg installs `/usr/local/bin/git-fat`. It is not signed yet, so
-Gatekeeper blocks it in Installer.app until you allow it under System Settings,
-Privacy & Security. Installing from a shell works directly:
+On macOS, the pkg installs `/usr/local/bin/git-fat`. The pkg and the darwin
+binaries are signed with a Developer ID and notarized by Apple. Install it from
+Installer.app or a shell:
 
 ```sh
 sudo installer -pkg git-fat-<version>-universal.pkg -target /
