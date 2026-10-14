@@ -77,9 +77,9 @@ func (r *Repo) cache(in io.Reader) (sha string, size int64, err error) {
 	}
 	// The rename replaces a truncated or otherwise wrong-sized object. It
 	// fails, leaving the error to the caller, when obj is a directory.
-	if err = os.Rename(tmp.Name(), obj); err != nil {
-		// A concurrent clean of the same content may have published first; on
-		// Windows the rename then fails because the destination is read-only.
+	if err = replaceFile(tmp.Name(), obj); err != nil {
+		// A concurrent clean of the same content may have published first and
+		// still hold the object open, which on Windows fails the rename.
 		if cached(obj, size) {
 			return sha, size, nil
 		}

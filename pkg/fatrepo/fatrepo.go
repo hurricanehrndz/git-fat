@@ -4,6 +4,7 @@
 package fatrepo
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -26,6 +27,9 @@ type Repo struct {
 	Stderr io.Writer
 	// Verbose enables informational messages; warnings print regardless.
 	Verbose bool
+
+	// top caches Toplevel.
+	top string
 }
 
 // Open discovers the repository containing dir, creates its object directory,
@@ -83,17 +87,40 @@ func (r *Repo) Init(ctx context.Context) error {
 // git runs git with args in dir and returns its trimmed stdout. A failure
 // carries git's stderr.
 func git(ctx context.Context, dir string, args ...string) (string, error) {
+	out, err := gitBytes(ctx, dir, nil, args...)
+	return strings.TrimRight(string(out), "\r\n"), err
+}
+
+// gitBytes runs git with args in dir, feeding it stdin when non-nil, and
+// returns its raw stdout, for -z and --batch output that must not be trimmed.
+func gitBytes(ctx context.Context, dir string, stdin []byte, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
-			return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(ee.Stderr)))
+			return nil, fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(ee.Stderr)))
 		}
-		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
-	return strings.TrimRight(string(out), "\r\n"), nil
+	return out, nil
+}
+
+// Toplevel returns the absolute path of the worktree's top directory, where
+// .gitfat lives and against which repo-relative paths resolve.
+func (r *Repo) Toplevel(ctx context.Context) (string, error) {
+	if r.top == "" {
+		out, err := git(ctx, r.Dir, "rev-parse", "--show-toplevel")
+		if err != nil {
+			return "", err
+		}
+		r.top = filepath.FromSlash(out)
+	}
+	return r.top, nil
 }
 
 // logf prints a git-fat message to Stderr; verbose-only messages are dropped

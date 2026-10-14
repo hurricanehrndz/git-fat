@@ -28,10 +28,41 @@ func TestRunVersion(t *testing.T) {
 }
 
 func TestRunUsageErrors(t *testing.T) {
-	for _, args := range [][]string{nil, {"bogus"}, {"push"}, {"filter-clean", "extra"}} {
+	for _, args := range [][]string{nil, {"bogus"}, {"filter-clean", "extra"}} {
 		err := run(context.Background(), args, nil, &bytes.Buffer{}, &bytes.Buffer{})
 		if err == nil {
 			t.Errorf("run(%q) succeeded, want usage error", args)
+		}
+	}
+}
+
+// TestRunStoreUsageErrors are rejected before git-fat looks for a repo, so
+// they never touch the repo the test runs in.
+func TestRunStoreUsageErrors(t *testing.T) {
+	for _, args := range [][]string{{"push", "extra"}, {"pull"}, {"pull", "-x"}, {"pull-new", "a", "b"}, {"fscheck-new", "a", "b"}} {
+		var stderr bytes.Buffer
+		if err := run(context.Background(), args, nil, &bytes.Buffer{}, &stderr); err == nil {
+			t.Errorf("run(%q) succeeded, want usage error", args)
+		}
+	}
+}
+
+func TestParseStoreArgs(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want storeArgs
+	}{
+		// --all selects the whole index even with files named.
+		{[]string{"pull", "a.fat", "--all"}, storeArgs{all: true}},
+		{[]string{"pull", "-a"}, storeArgs{all: true}},
+		{[]string{"pull", "--", "-a"}, storeArgs{files: []string{"-a"}}},
+		{[]string{"fscheck", "a.fat", "b.fat"}, storeArgs{files: []string{"a.fat", "b.fat"}}},
+		{[]string{"fscheck-new"}, storeArgs{ref: "master"}},
+		{[]string{"pull-new", "main"}, storeArgs{ref: "main"}},
+	} {
+		got, err := parseStoreArgs(tc.args[0], tc.args[1:], &bytes.Buffer{})
+		if err != nil || got.all != tc.want.all || got.ref != tc.want.ref || strings.Join(got.files, ",") != strings.Join(tc.want.files, ",") {
+			t.Errorf("parseStoreArgs(%q) = %+v, %v; want %+v", tc.args, got, err, tc.want)
 		}
 	}
 }
@@ -324,5 +355,19 @@ func TestNotInRepo(t *testing.T) {
 	}
 	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "not in a git repository") {
 		t.Fatalf("stdout %q, stderr %q", stdout.String(), stderr.String())
+	}
+}
+
+// TestStoreCommandWithoutConfig matches Python's error for a repo without
+// .gitfat.
+func TestStoreCommandWithoutConfig(t *testing.T) {
+	buildGitFat(t)
+	src := newFatRepo(t)
+	cmd := exec.Command("git-fat", "push")
+	cmd.Dir = src
+	out, err := cmd.CombinedOutput()
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) || ee.ExitCode() != 1 || !strings.Contains(string(out), "git-fat: no valid fat config exists") {
+		t.Fatalf("push without .gitfat: %v\n%s", err, out)
 	}
 }
