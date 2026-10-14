@@ -1,15 +1,20 @@
 [package]
 name = "git-fat"
 display-name = "git-fat"
-version = "2.0.0"
+version = "2.1.0"
 identifier = "com.github.hurricanehrndz.git-fat"
 publisher = "hurricanehrndz"
 description = "Git filter that stores large files in S3 instead of the repository"
 homepage = "https://github.com/hurricanehrndz/git-fat"
 
-# No [msi]: embala's MSI cannot add its install directory to PATH, and
-# `git fat` only works when git-fat is on PATH. Windows users get the zip
-# release asset instead (mise puts it on PATH).
+# Installs to Program Files\git-fat and appends that to the system PATH, since
+# `git fat` only works when git-fat is on PATH. The zip release asset stays for
+# mise and manual installs.
+[msi]
+arch = "x86_64"
+main-executable = "git-fat.exe"
+files = [{ src = "staging/windows-x86_64/git-fat.exe", dest = "git-fat.exe" }]
+add-to-path = true
 
 # One universal binary covers Intel and Apple silicon. /usr/local/bin is on
 # the default PATH, so `git fat` works right after install.
@@ -17,7 +22,7 @@ homepage = "https://github.com/hurricanehrndz/git-fat"
 install-location = "/usr/local"
 files = [{ src = "dist/git-fat-darwin-universal", dest = "bin/git-fat" }]
 
-# No [sign]: the pkg is unsigned for now because this repo has no signing
-# secrets. To sign and notarize, add the MACOS_* secrets to this repo and copy
-# pinsync's [sign.macos] section and its release.yml signing and notarization
-# steps.
+# The release workflow supplies these paths. embala invokes rcodesign after it
+# builds the package, so the installer signature covers the finished XAR.
+[sign.macos]
+command = "rcodesign sign --p12-file \"$MACOS_INSTALLER_P12\" --p12-password-file \"$MACOS_INSTALLER_P12_PASSWORD_FILE\" $f"

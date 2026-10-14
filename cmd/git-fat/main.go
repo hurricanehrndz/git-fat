@@ -20,23 +20,35 @@ import (
 
 const usage = `usage:
   git-fat init                     configure the fat filters for this repo
-  git-fat push                     upload cached fat objects the store lacks
+  git-fat push                     upload the index's fat objects the store lacks
   git-fat pull (--all | files...)  download fat objects and restore their files (also -a)
-  git-fat pull-new [ref]           pull fat objects new in HEAD vs ref (default master)
-  git-fat fscheck [files...]       check the index's fat objects are in the store
-  git-fat fscheck-new [ref]        check fat objects staged new vs ref (default master) are in the store
-  git-fat fspublish-new [ref]      upload files new in HEAD vs ref (default master) to the smudgestore
+  git-fat pull --base <ref>        pull fat files HEAD adds or changes vs ref
+  git-fat check [files...]         check the index's fat objects are in the store
+  git-fat check --base <ref>       check fat files staged as added or changed vs ref are in the store
+  git-fat publish --base <ref>     upload fat files HEAD adds or changes vs ref to the smudgestore
+  git-fat version                  print the git-fat version and exit (also -v, --version)
+
+git runs these; you do not:
   git-fat filter-clean             read file content on stdin, cache it, write its stub to stdout
   git-fat filter-smudge            read a stub on stdin, write the cached content to stdout
-  git-fat filter-process           serve git's long-running filter protocol on stdin and stdout
-  git-fat version                  print the git-fat version and exit (also -v, --version)`
+  git-fat filter-process           serve git's long-running filter protocol on stdin and stdout`
 
-// defaultRef is the ref the *-new commands compare against, as in Python.
-const defaultRef = "master"
+// legacy maps each 1.x subcommand to its 2.x name. The old names still
+// work, unlisted, so 1.x scripts and pre-commit configs keep running.
+var legacy = map[string]string{
+	"fscheck":       "check",
+	"fscheck-new":   "check",
+	"pull-new":      "pull",
+	"fspublish-new": "publish",
+}
+
+// legacyDefaultRef is the ref the 1.x *-new commands compare against when
+// given none.
+const legacyDefaultRef = "master"
 
 // version is the git-fat release version, managed by `go tool versionbump`
 // (see versionbump.yaml).
-const version = "2.0.0"
+const version = "2.1.0"
 
 func main() {
 	// Cancel on the first interrupt so an in-flight multipart upload is
@@ -64,20 +76,23 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	if len(args) == 0 {
 		return errors.New("missing subcommand\n" + usage)
 	}
-	sub := args[0]
+	sub, rest, err := fromLegacy(args[0], args[1:])
+	if err != nil {
+		return err
+	}
 	switch sub {
 	case "version", "-v", "--version":
-		_, err := fmt.Fprintln(stdout, version)
+		_, err = fmt.Fprintln(stdout, version)
 		return err
 	case "init", "filter-clean", "filter-smudge", "filter-process":
-	case "push", "pull", "pull-new", "fscheck", "fscheck-new", "fspublish-new":
-		return runStore(ctx, sub, args[1:], stderr)
+	case "push", "pull", "check", "publish":
+		return runStore(ctx, sub, rest, stderr)
 	default:
 		return fmt.Errorf("unknown subcommand %q\n%s", sub, usage)
 	}
 	fs := flag.NewFlagSet("git-fat "+sub, flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	if err := fs.Parse(args[1:]); err != nil {
+	if err = fs.Parse(rest); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
@@ -104,11 +119,31 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	}
 }
 
+// fromLegacy rewrites a 1.x subcommand and its arguments as their 2.x
+// form: fscheck becomes check, and X-new [ref] becomes X --base ref.
+func fromLegacy(sub string, args []string) (string, []string, error) {
+	name, ok := legacy[sub]
+	if !ok {
+		return sub, args, nil
+	}
+	if sub == "fscheck" {
+		return name, args, nil
+	}
+	if len(args) > 1 {
+		return "", nil, fmt.Errorf("%s takes at most one ref, got %q", sub, args)
+	}
+	ref := legacyDefaultRef
+	if len(args) == 1 {
+		ref = args[0]
+	}
+	return name, []string{"--base", ref}, nil
+}
+
 // storeArgs are a store command's parsed arguments.
 type storeArgs struct {
 	all   bool
 	files []string
-	ref   string
+	base  string
 }
 
 // parseStoreArgs parses a store command's arguments.
@@ -120,35 +155,39 @@ func parseStoreArgs(sub string, args []string, stderr io.Writer) (storeArgs, err
 		fs.BoolVar(&a.all, "all", false, "download and restore every fat file in the index")
 		fs.BoolVar(&a.all, "a", false, "short for --all")
 	}
+	if sub != "push" {
+		fs.StringVar(&a.base, "base", "", "only fat files added or changed vs this ref")
+	}
 	pos, err := parseInterleaved(fs, args)
 	if err != nil {
 		return a, err
 	}
-	switch sub {
-	case "push":
+	a.files, err = storeFiles(sub, a, pos)
+	return a, err
+}
+
+// storeFiles checks a store command's positional arguments against its
+// flags and returns the files it names.
+func storeFiles(sub string, a storeArgs, pos []string) ([]string, error) {
+	switch {
+	case sub == "push" || sub == "publish":
 		if len(pos) != 0 {
-			return a, fmt.Errorf("%s takes no arguments, got %q", sub, pos[0])
+			return nil, fmt.Errorf("%s takes no arguments, got %q", sub, pos[0])
 		}
-	case "pull":
-		if !a.all && len(pos) == 0 {
-			return a, errors.New("pull: use --all or pass list files")
+		if sub == "publish" && a.base == "" {
+			return nil, errors.New("publish: --base is required")
 		}
+	case a.base != "":
+		if a.all || len(pos) != 0 {
+			return nil, fmt.Errorf("%s: --base cannot be combined with --all or files", sub)
+		}
+	case sub == "pull" && !a.all && len(pos) == 0:
+		return nil, errors.New("pull: use --all, --base or list files")
+	case !a.all:
 		// As in Python, --all wins and any files given with it are ignored.
-		if !a.all {
-			a.files = pos
-		}
-	case "fscheck":
-		a.files = pos
-	default:
-		if len(pos) > 1 {
-			return a, fmt.Errorf("%s takes at most one ref, got %q", sub, pos)
-		}
-		a.ref = defaultRef
-		if len(pos) == 1 {
-			a.ref = pos[0]
-		}
+		return pos, nil
 	}
-	return a, nil
+	return nil, nil
 }
 
 // parseInterleaved parses args with fs, allowing flags after positional
@@ -197,30 +236,28 @@ func runStore(ctx context.Context, sub string, args []string, stderr io.Writer) 
 	switch sub {
 	case "push":
 		return repo.Push(ctx, store)
-	case "fspublish-new":
-		return publish(ctx, repo, store, cfg, a.ref)
+	case "publish":
+		return publish(ctx, repo, store, cfg, a.base)
 	}
 	objs, err := storeObjects(ctx, repo, sub, a)
 	if err != nil {
 		return err
 	}
-	if sub == "pull" || sub == "pull-new" {
+	if sub == "pull" {
 		return repo.Pull(ctx, sub, store, objs)
 	}
 	return repo.Check(ctx, sub, store, objs)
 }
 
-// storeObjects returns the fat objects pull, pull-new, fscheck or
-// fscheck-new works on.
+// storeObjects returns the fat objects pull or check works on.
 func storeObjects(ctx context.Context, repo *fatrepo.Repo, sub string, a storeArgs) ([]fatrepo.Object, error) {
 	switch {
-	case sub == "pull-new":
-		return repo.NewObjects(ctx, a.ref, false)
-	case sub == "fscheck-new":
-		// A pre-commit hook: check what is about to be committed.
-		return repo.NewObjects(ctx, a.ref, true)
+	case a.base != "":
+		// check --base is a pre-commit hook: it checks what is about to
+		// be committed, so it compares the index rather than HEAD.
+		return repo.NewObjects(ctx, a.base, sub == "check")
 	case len(a.files) == 0:
-		// pull --all, or fscheck of the whole index.
+		// pull --all, or check of the whole index.
 		return repo.IndexObjects(ctx)
 	}
 	paths, err := repo.ResolvePaths(ctx, sub, a.files)
@@ -247,10 +284,10 @@ func storeObjects(ctx context.Context, repo *fatrepo.Repo, sub string, a storeAr
 	return named, nil
 }
 
-// publish runs fspublish-new against cfg's smudgestore.
+// publish runs publish against cfg's smudgestore.
 func publish(ctx context.Context, repo *fatrepo.Repo, store *fatstore.Store, cfg *fatconfig.Store, ref string) error {
 	if cfg.Smudge == nil {
-		return errors.New("fspublish-new: no smudgestore configured in " + fatconfig.FileName)
+		return errors.New("publish: no smudgestore configured in " + fatconfig.FileName)
 	}
 	smudge, err := fatstore.New(ctx, cfg.Smudge)
 	if err != nil {

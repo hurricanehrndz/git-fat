@@ -61,8 +61,8 @@ func (r *Repo) IndexObjects(ctx context.Context) ([]Object, error) {
 
 // NewObjects returns the fat objects that HEAD adds or changes relative to
 // ref, or with cached set, that the index does. Python counted only added
-// paths, so a fat file whose content changed escaped fscheck-new and
-// pull-new; modifications and type changes count here.
+// paths, so a fat file whose content changed escaped check --base and
+// pull --base; modifications and type changes count here.
 func (r *Repo) NewObjects(ctx context.Context, ref string, cached bool) ([]Object, error) {
 	top, err := r.Toplevel(ctx)
 	if err != nil {

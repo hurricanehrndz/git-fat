@@ -39,7 +39,12 @@ func TestRunUsageErrors(t *testing.T) {
 // TestRunStoreUsageErrors are rejected before git-fat looks for a repo, so
 // they never touch the repo the test runs in.
 func TestRunStoreUsageErrors(t *testing.T) {
-	for _, args := range [][]string{{"push", "extra"}, {"pull"}, {"pull", "-x"}, {"pull-new", "a", "b"}, {"fscheck-new", "a", "b"}} {
+	for _, args := range [][]string{
+		{"push", "extra"}, {"push", "--base", "m"}, {"pull"}, {"pull", "-x"},
+		{"pull", "--base", "m", "a.fat"}, {"pull", "--base", "m", "--all"}, {"check", "--base", "m", "a.fat"},
+		{"publish"}, {"publish", "--base", "m", "a.fat"}, {"check", "--all"},
+		{"pull-new", "a", "b"}, {"fscheck-new", "a", "b"},
+	} {
 		var stderr bytes.Buffer
 		if err := run(context.Background(), args, nil, &bytes.Buffer{}, &stderr); err == nil {
 			t.Errorf("run(%q) succeeded, want usage error", args)
@@ -56,12 +61,23 @@ func TestParseStoreArgs(t *testing.T) {
 		{[]string{"pull", "a.fat", "--all"}, storeArgs{all: true}},
 		{[]string{"pull", "-a"}, storeArgs{all: true}},
 		{[]string{"pull", "--", "-a"}, storeArgs{files: []string{"-a"}}},
+		{[]string{"pull", "--base", "main"}, storeArgs{base: "main"}},
+		{[]string{"check"}, storeArgs{}},
+		{[]string{"check", "a.fat", "b.fat"}, storeArgs{files: []string{"a.fat", "b.fat"}}},
+		{[]string{"check", "--base", "main"}, storeArgs{base: "main"}},
+		{[]string{"publish", "--base", "main"}, storeArgs{base: "main"}},
+		// 1.x names, kept for existing scripts and pre-commit configs.
 		{[]string{"fscheck", "a.fat", "b.fat"}, storeArgs{files: []string{"a.fat", "b.fat"}}},
-		{[]string{"fscheck-new"}, storeArgs{ref: "master"}},
-		{[]string{"pull-new", "main"}, storeArgs{ref: "main"}},
+		{[]string{"fscheck-new"}, storeArgs{base: "master"}},
+		{[]string{"pull-new", "main"}, storeArgs{base: "main"}},
+		{[]string{"fspublish-new"}, storeArgs{base: "master"}},
 	} {
-		got, err := parseStoreArgs(tc.args[0], tc.args[1:], &bytes.Buffer{})
-		if err != nil || got.all != tc.want.all || got.ref != tc.want.ref || strings.Join(got.files, ",") != strings.Join(tc.want.files, ",") {
+		sub, rest, err := fromLegacy(tc.args[0], tc.args[1:])
+		if err != nil {
+			t.Fatalf("fromLegacy(%q): %v", tc.args, err)
+		}
+		got, err := parseStoreArgs(sub, rest, &bytes.Buffer{})
+		if err != nil || got.all != tc.want.all || got.base != tc.want.base || strings.Join(got.files, ",") != strings.Join(tc.want.files, ",") {
 			t.Errorf("parseStoreArgs(%q) = %+v, %v; want %+v", tc.args, got, err, tc.want)
 		}
 	}

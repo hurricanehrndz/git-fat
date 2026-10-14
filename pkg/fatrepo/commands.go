@@ -390,7 +390,7 @@ func (r *Repo) Check(ctx context.Context, cmd string, s Store, objs []Object) er
 // not cached. Unlike Python it does not restore the working file on the
 // way. A failed object does not stop the others.
 func (r *Repo) Publish(ctx context.Context, s, smudge Store, objs []Object) error {
-	const cmd = "fspublish-new"
+	const cmd = "publish"
 	rm := &remote{s: s}
 	nfail := 0
 	for _, o := range objs {
