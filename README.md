@@ -107,7 +107,7 @@ ACL = "bucket-owner-full-control"
 Metadata = { team = "games" }
 Expires = 2030-01-01T00:00:00Z  # datetimes need a UTC offset
 
-# Optional second store for `git fat fspublish-new`. It takes the same keys
+# Optional second store for `git fat publish`. It takes the same keys
 # as [s3] except smudgestore.
 [s3.smudgestore]
 bucket = "s3://my-published-files"
@@ -134,14 +134,18 @@ TLS certificates are verified. For a store with a private CA, set
 
 ```
 git fat init                     configure the fat filters for this repo
-git fat push                     upload cached fat objects the store lacks
+git fat push                     upload the index's fat objects the store lacks
 git fat pull (--all | files...)  download fat objects and restore their files
-git fat pull-new [ref]           pull fat objects new in HEAD vs ref (default master)
-git fat fscheck [files...]       check the index's fat objects are in the store
-git fat fscheck-new [ref]        check fat objects staged new vs ref (default master) are in the store
-git fat fspublish-new [ref]      upload files new in HEAD vs ref (default master) to the smudgestore
+git fat pull --base <ref>        pull fat files HEAD adds or changes vs ref
+git fat check [files...]         check the index's fat objects are in the store
+git fat check --base <ref>       check fat files staged as added or changed vs ref are in the store
+git fat publish --base <ref>     upload fat files HEAD adds or changes vs ref to the smudgestore
 git fat version                  print the version
 ```
+
+`--base` limits a command to fat files added or changed relative to a ref.
+`pull` and `publish` compare HEAD with it, `check` compares the index, which
+is what a pre-commit hook needs. Deleted files are skipped.
 
 `filter-clean`, `filter-smudge` and `filter-process` are what git calls; you do
 not run them yourself.
@@ -152,7 +156,7 @@ size before it enters `.git/fat/objects`. A clone that has no fat objects yet
 shows stubs in place of fat files until you pull.
 
 `GIT_FAT_VERBOSE=1` prints informational messages as well as warnings.
-`DRYRUN=1` makes uploads (`push`, `fspublish-new`) print what they would upload
+`DRYRUN=1` makes uploads (`push`, `publish`) print what they would upload
 instead.
 
 Fat objects live under git's common directory, so linked worktrees share one
@@ -169,6 +173,7 @@ repos:
     rev: v2.0.0
     hooks:
       - id: gitfat-check-new   # pre-commit: staged fat objects new vs master are in the store
+        # args: [main]           # compare against another ref
       - id: gitfat-check       # pre-merge-commit: fat objects of the files pre-commit passes are in the store
 ```
 
@@ -197,15 +202,26 @@ package (its `yelp-gitfat` alias is gone) and install git-fat as above. Then:
   which emptied the checked-out file.
 - A stub is exactly 74 bytes. A file that merely starts with a stub is
   treated as content.
-- `pull-new`, `fscheck-new` and `fspublish-new` also catch fat files that
-  changed, not only those added. `fscheck-new` checks the index (what is about
-  to be committed) instead of the working tree.
+- The commands are renamed. The 1.x names still work, unlisted:
+
+  | 1.x                   | 2.x                       |
+  |-----------------------|---------------------------|
+  | `fscheck [files...]`  | `check [files...]`        |
+  | `fscheck-new [ref]`   | `check --base <ref>`      |
+  | `pull-new [ref]`      | `pull --base <ref>`       |
+  | `fspublish-new [ref]` | `publish --base <ref>`    |
+
+  The 1.x names still default to `master` when given no ref. `--base` has no
+  default.
+- `--base` also catches fat files that changed, not only those added.
+  `check --base` checks the index (what is about to be committed) instead of
+  the working tree.
 - `pull` restores any working file that still holds its stub, even when the
   object was already cached, and leaves files with local changes alone. It
   verifies each download's SHA1 and size and keeps the working file's
   permission bits (1.x made restored files read-only). As before, the file
   gets the cached object's modification time.
-- `fspublish-new` no longer restores working files on the way.
+- `publish` no longer restores working files on the way.
 - `push` warns about fat objects that are neither cached locally nor in the
   store, since nobody can fetch them.
 

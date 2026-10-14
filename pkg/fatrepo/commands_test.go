@@ -223,7 +223,7 @@ func TestIndexObjectsExactStubs(t *testing.T) {
 }
 
 // TestNewObjects counts modified fat files as new, and with cached compares
-// the index rather than HEAD, as the fscheck-new pre-commit hook needs.
+// the index rather than HEAD, as the check --base pre-commit hook needs.
 func TestNewObjects(t *testing.T) {
 	dir := initRepo(t, false)
 	commit(t, dir, map[string]string{"a.fat": stubOf("a1"), "keep.fat": stubOf("k")})
@@ -436,13 +436,13 @@ func TestCheckNamesMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = r.Check(ctx, "fscheck", store, objs); err == nil {
+	if err = r.Check(ctx, "check", store, objs); err == nil {
 		t.Fatal("Check succeeded with b.fat missing")
 	}
-	if got := stderr.String(); got != "git-fat fscheck: b.fat not found on remote store\n" {
+	if got := stderr.String(); got != "git-fat check: b.fat not found on remote store\n" {
 		t.Fatalf("stderr = %q", got)
 	}
-	if err = r.Check(ctx, "fscheck", store, objs[:1]); err != nil {
+	if err = r.Check(ctx, "check", store, objs[:1]); err != nil {
 		t.Fatalf("Check of a.fat: %v", err)
 	}
 }
@@ -474,7 +474,7 @@ func TestPublishUsesPaths(t *testing.T) {
 	if !slices.Equal(smudge.uploads, []string{"test dir/f.fat"}) || string(smudge.objs["test dir/f.fat"]) != "fat f\n" {
 		t.Fatalf("smudge store uploads = %v", smudge.uploads)
 	}
-	if !strings.Contains(stderr.String(), "git-fat fspublish-new: publishing 'test dir/f.fat' to smudgestore\n") {
+	if !strings.Contains(stderr.String(), "git-fat publish: publishing 'test dir/f.fat' to smudgestore\n") {
 		t.Fatalf("stderr = %q", stderr)
 	}
 }

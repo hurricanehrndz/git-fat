@@ -94,8 +94,8 @@ func isolateAWS(t *testing.T) {
 }
 
 // TestRustFSFlow is the 1.x Python test_cmdline.py flow against RustFS:
-// push, clone and pull, fscheck and fscheck-new, pull-new, fspublish-new
-// and a DRYRUN push.
+// push, clone and pull, check, pull --base, publish and a DRYRUN push, with
+// a 1.x alias of check and of check --base.
 func TestRustFSFlow(t *testing.T) {
 	buildGitFat(t)
 	isolateAWS(t)
@@ -110,8 +110,8 @@ func TestRustFSFlow(t *testing.T) {
 	sh(t, src, "git", "add", ".gitfat", "b.fat")
 	sh(t, src, "git", "commit", "-q", "-m", "add b.fat and .gitfat")
 
-	if code := exitOf(t, src, "fscheck"); code != 1 {
-		t.Fatalf("fscheck before push: exit %d, want 1", code)
+	if code := exitOf(t, src, "check"); code != 1 {
+		t.Fatalf("check before push: exit %d, want 1", code)
 	}
 	mustGitFat(t, src, "push")
 	if ks := keys(t, client, bucket); len(ks) != 2 {
@@ -120,9 +120,9 @@ func TestRustFSFlow(t *testing.T) {
 	if stderr := mustGitFat(t, src, "push"); !strings.Contains(stderr, "git-fat push: nothing to push") {
 		t.Fatalf("second push stderr = %q", stderr)
 	}
-	mustGitFat(t, src, "fscheck")
+	mustGitFat(t, src, "check")
 	mustGitFat(t, src, "fscheck", "a.fat")
-	mustGitFat(t, src, "fscheck-new")
+	mustGitFat(t, src, "check", "--base", "master")
 
 	clone := filepath.Join(t.TempDir(), "clone")
 	sh(t, "", "git", "clone", "-q", src, clone)
@@ -152,8 +152,8 @@ func TestRustFSFlow(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(src, "test dir", "f.fat"), "fat content f\n")
 	sh(t, src, "git", "add", ".")
-	if _, stderr, code := gitFat(t, src, nil, "fscheck-new"); code != 1 || !strings.Contains(stderr, "c.fat not found on remote store") {
-		t.Fatalf("fscheck-new with staged c.fat: exit %d\n%s", code, stderr)
+	if _, stderr, code := gitFat(t, src, nil, "check", "--base", "master"); code != 1 || !strings.Contains(stderr, "c.fat not found on remote store") {
+		t.Fatalf("check --base with staged c.fat: exit %d\n%s", code, stderr)
 	}
 	sh(t, src, "git", "commit", "-q", "-m", "more fat")
 
@@ -165,16 +165,17 @@ func TestRustFSFlow(t *testing.T) {
 		t.Fatalf("store after DRYRUN push = %v, want still 2 objects", ks)
 	}
 	mustGitFat(t, src, "push")
-	mustGitFat(t, src, "fscheck-new", "master")
+	// The 1.x name, with its default ref of master.
+	mustGitFat(t, src, "fscheck-new")
 
 	sh(t, clone, "git", "fetch", "-q", "origin")
 	sh(t, clone, "git", "checkout", "-q", "-b", "more_fat", "origin/more_fat")
-	mustGitFat(t, clone, "pull-new")
+	mustGitFat(t, clone, "pull", "--base", "master")
 	if got := readFile(t, filepath.Join(clone, "test dir", "f.fat")); got != "fat content f\n" {
-		t.Fatalf("f.fat after pull-new = %q", got)
+		t.Fatalf("f.fat after pull --base = %q", got)
 	}
 	if st := sh(t, clone, "git", "status", "--porcelain"); st != "" {
-		t.Fatalf("clone status after pull-new:\n%s", st)
+		t.Fatalf("clone status after pull --base:\n%s", st)
 	}
 
 	// Publish from src with c.fat's object gone, so it is downloaded first.
@@ -182,7 +183,7 @@ func TestRustFSFlow(t *testing.T) {
 	if err := os.Remove(filepath.Join(src, ".git", "fat", "objects", cSHA)); err != nil {
 		t.Fatal(err)
 	}
-	mustGitFat(t, src, "fspublish-new")
+	mustGitFat(t, src, "publish", "--base", "master")
 	if ks := keys(t, client, smudgeBucket); !slices.Equal(ks, []string{"c.fat", "test dir/f.fat"}) {
 		t.Fatalf("smudgestore = %v", ks)
 	}
